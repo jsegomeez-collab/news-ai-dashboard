@@ -7,3 +7,6 @@ data/
 knowledge/**/*
 !knowledge/**/.gitkeep
 !knowledge/**/README.md
+
+# build info
+*.tsbuildinfo
