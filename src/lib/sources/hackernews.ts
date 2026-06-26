@@ -20,7 +20,7 @@ export async function fetchHackerNews(): Promise<RawArticle[]> {
       const res = await fetch(
         `https://hn.algolia.com/api/v1/search_by_date?query=${encodeURIComponent(
           term
-        )}&tags=story&numericFilters=points>20&hitsPerPage=10`
+        )}&tags=story&numericFilters=points>10&hitsPerPage=30`
       );
       if (!res.ok) continue;
       const json = (await res.json()) as { hits: HnHit[] };

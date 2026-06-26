@@ -19,7 +19,7 @@ export async function fetchRss(): Promise<RawArticle[]> {
     RSS_FEEDS.map(async (feed) => {
       try {
         const parsed = await parser.parseURL(feed.url);
-        for (const item of parsed.items.slice(0, 12)) {
+        for (const item of parsed.items.slice(0, 40)) {
           if (!item.link || !item.title) continue;
           out.push({
             source: `rss/${feed.name}`,

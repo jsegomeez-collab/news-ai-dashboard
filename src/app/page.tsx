@@ -53,18 +53,28 @@ function GuionizarBtn({ articleId }: { articleId: number }) {
   );
 }
 
+const PAGE_SIZE = 50;
+
 export default function NoticiasPage() {
   const [min, setMin] = useState(55);
+  const [page, setPage] = useState(1);
   const [running, setRunning] = useState(false);
-  const { data, loading, error, refresh } = usePoll<{ items: NewsItem[] }>(
-    `/api/news?min=${min}&limit=120`,
-    30000
-  );
+  const { data, loading, error, refresh } = usePoll<{
+    items: NewsItem[];
+    total: number;
+    pages: number;
+  }>(`/api/news?min=${min}&page=${page}&pageSize=${PAGE_SIZE}`, 30000);
+
+  function changeMin(v: number) {
+    setMin(v);
+    setPage(1);
+  }
 
   async function runNow() {
     setRunning(true);
     try {
       await fetch("/api/run", { method: "POST" });
+      setPage(1);
       await refresh();
     } finally {
       setRunning(false);
@@ -72,6 +82,8 @@ export default function NoticiasPage() {
   }
 
   const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const pages = data?.pages ?? 1;
 
   return (
     <div>
@@ -87,7 +99,7 @@ export default function NoticiasPage() {
           Filtro:
           <select
             value={min}
-            onChange={(e) => setMin(Number(e.target.value))}
+            onChange={(e) => changeMin(Number(e.target.value))}
             className="rounded border border-edge bg-panel px-2 py-1 text-zinc-200"
           >
             <option value={55}>Relevantes (≥55)</option>
@@ -97,7 +109,7 @@ export default function NoticiasPage() {
           </select>
         </label>
         <span className="text-xs text-zinc-500">
-          {loading ? "cargando…" : `${items.length} noticias`} · autorefresco 30s
+          {loading ? "cargando…" : `${total} noticias`} · pág. {page}/{pages} · autorefresco 30s
         </span>
       </div>
 
@@ -152,6 +164,28 @@ export default function NoticiasPage() {
           </p>
         )}
       </div>
+
+      {pages > 1 && (
+        <div className="mt-5 flex items-center justify-center gap-3">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
+          >
+            ← Anterior
+          </button>
+          <span className="text-sm text-zinc-400">
+            Página {page} de {pages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(pages, p + 1))}
+            disabled={page >= pages}
+            className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
+          >
+            Siguiente →
+          </button>
+        </div>
+      )}
     </div>
   );
 }

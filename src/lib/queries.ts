@@ -14,9 +14,13 @@ export type NewsItem = {
   actuality_link: string | null;
 };
 
-export function listNews(userId: number, opts: { minRelevance?: number; limit?: number } = {}): NewsItem[] {
+export function listNews(
+  userId: number,
+  opts: { minRelevance?: number; limit?: number; offset?: number } = {}
+): NewsItem[] {
   const min = opts.minRelevance ?? 0;
-  const limit = opts.limit ?? 120;
+  const limit = opts.limit ?? 50;
+  const offset = opts.offset ?? 0;
   return db
     .prepare(
       `SELECT a.id, a.source, a.url, a.title, a.summary, a.published_at, a.fetched_at,
@@ -25,9 +29,22 @@ export function listNews(userId: number, opts: { minRelevance?: number; limit?: 
        LEFT JOIN classifications c ON c.article_id = a.id AND c.user_id = ?
        WHERE c.relevance IS NULL OR c.relevance >= ?
        ORDER BY (c.relevance IS NULL), c.relevance DESC, a.fetched_at DESC
-       LIMIT ?`
+       LIMIT ? OFFSET ?`
     )
-    .all(userId, min, limit) as NewsItem[];
+    .all(userId, min, limit, offset) as NewsItem[];
+}
+
+export function countNews(userId: number, minRelevance = 0): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) n
+         FROM articles a
+         LEFT JOIN classifications c ON c.article_id = a.id AND c.user_id = ?
+         WHERE c.relevance IS NULL OR c.relevance >= ?`
+      )
+      .get(userId, minRelevance) as { n: number }
+  ).n;
 }
 
 export type ScriptItem = {

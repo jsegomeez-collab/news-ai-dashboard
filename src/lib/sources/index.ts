@@ -54,5 +54,18 @@ export async function pollAllSources(): Promise<{ fetched: number; inserted: num
   });
   tx([...byUrl.values()]);
 
+  pruneOldArticles();
+
   return { fetched: byUrl.size, inserted };
+}
+
+// Elimina noticias más viejas que NEWS_RETENTION_DAYS. Los guiones que
+// salieron de ellas se conservan (article_id queda en NULL por ON DELETE SET NULL).
+function pruneOldArticles(): void {
+  const cutoff = new Date(Date.now() - env.newsRetentionDays * 86400_000).toISOString();
+  try {
+    db.prepare(`DELETE FROM articles WHERE fetched_at < ?`).run(cutoff);
+  } catch (e) {
+    console.warn("[sources] prune:", (e as Error).message);
+  }
 }

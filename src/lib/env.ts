@@ -22,7 +22,10 @@ export const env = {
   modelGenerate: str("MODEL_GENERATE", "claude-sonnet-4-6"),
   modelPremium: str("MODEL_PREMIUM", "claude-opus-4-8"),
 
-  pollCron: str("POLL_CRON", "*/10 * * * *"),
+  pollCron: str("POLL_CRON", "0 */2 * * *"),
+  // Días que se conservan las noticias (las más viejas se eliminan para que la
+  // BD no crezca sin control). Los guiones ya generados se conservan igualmente.
+  newsRetentionDays: num("NEWS_RETENTION_DAYS", 21),
   relevanceThreshold: num("RELEVANCE_THRESHOLD", 70),
   // Umbral por debajo del cual una noticia NO se muestra en el feed (se considera
   // fuera de tema). Las pendientes de clasificar sí se muestran (marcadas "…").

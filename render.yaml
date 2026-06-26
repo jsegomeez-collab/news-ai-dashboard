@@ -22,7 +22,7 @@ services:
       - key: ADMIN_EMAILS
         value: jsegomeez@gmail.com
       - key: POLL_CRON
-        value: "*/10 * * * *"
+        value: "0 */2 * * *"
     disk:
       name: data
       mountPath: /data
