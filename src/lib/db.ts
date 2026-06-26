@@ -1,10 +1,32 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync, accessSync, constants } from "node:fs";
 import { dirname, join } from "node:path";
 
-// En hosts con disco persistente (Railway/Render), apunta DB_PATH al volumen
-// montado (p.ej. /data/app.db) para que la BD sobreviva a los redeploys.
-const DB_PATH = process.env.DB_PATH?.trim() || join(process.cwd(), "data", "app.db");
+// Resuelve dónde vive la BD, priorizando un DISCO PERSISTENTE para que las
+// cuentas/guiones NO se borren en cada deploy:
+//   1) DB_PATH si está definido (lo ideal en producción).
+//   2) /data o /var/data si existe y es escribible (convención de discos en
+//      Render/Railway) → auto-detección por si olvidaste poner DB_PATH.
+//   3) ./data/app.db (solo local; en un host serverless esto NO persiste).
+function resolveDbPath(): { path: string; persistent: boolean; reason: string } {
+  const explicit = process.env.DB_PATH?.trim();
+  if (explicit) return { path: explicit, persistent: true, reason: "DB_PATH" };
+
+  for (const mount of ["/data", "/var/data"]) {
+    try {
+      if (existsSync(mount)) {
+        accessSync(mount, constants.W_OK);
+        return { path: join(mount, "app.db"), persistent: true, reason: `disco en ${mount}` };
+      }
+    } catch {
+      /* no escribible: probar siguiente */
+    }
+  }
+  return { path: join(process.cwd(), "data", "app.db"), persistent: false, reason: "local (efímero)" };
+}
+
+const RESOLVED = resolveDbPath();
+const DB_PATH = RESOLVED.path;
 
 type Stmt = StatementSync;
 
@@ -15,12 +37,23 @@ let _raw: DatabaseSync | null = null;
 function getRaw(): DatabaseSync {
   if (_raw) return _raw;
   mkdirSync(dirname(DB_PATH), { recursive: true });
+  console.log(`[db] Base de datos: ${DB_PATH} (${RESOLVED.reason})`);
+  if (!RESOLVED.persistent && process.env.NODE_ENV === "production") {
+    console.warn(
+      "[db] ⚠ AVISO: la BD NO está en un disco persistente. En cada deploy se " +
+        "BORRARÁN las cuentas. Monta un disco (p.ej. en /data) y pon DB_PATH=/data/app.db."
+    );
+  }
   const r = new DatabaseSync(DB_PATH);
   r.exec("PRAGMA journal_mode = WAL;");
   r.exec("PRAGMA busy_timeout = 5000;");
   initSchema(r);
   _raw = r;
   return r;
+}
+
+export function dbInfo(): { path: string; persistent: boolean; reason: string } {
+  return { path: DB_PATH, persistent: RESOLVED.persistent, reason: RESOLVED.reason };
 }
 
 // Adaptador fino que expone el subconjunto de la API de better-sqlite3 que usamos.

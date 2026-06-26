@@ -4,6 +4,7 @@ import { stats } from "@/lib/queries";
 import { getBrandDocs } from "@/lib/brand";
 import { readUserSettings, withinGenerationWindow } from "@/lib/settings";
 import { getUser } from "@/lib/auth";
+import { dbInfo } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export function GET(req: NextRequest) {
   return NextResponse.json({
     user,
     hasKey: s.anthropicKey.startsWith("sk-ant-"),
+    db: dbInfo(),
     budget: budgetState(user.id),
     stats: stats(user.id),
     knowledge: { hasBases, hasTono: !!(docs["tonalidad"] ?? "").trim() },

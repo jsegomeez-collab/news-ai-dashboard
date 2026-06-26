@@ -114,6 +114,34 @@ git push -u origin main
 
 ---
 
+## ❗ "Se me borra la cuenta en cada deploy"
+
+Es el síntoma de que la base de datos NO está en el disco persistente, sino en
+el disco efímero del contenedor (que se recrea en cada deploy). Para arreglarlo
+en Render, comprueba **las dos cosas**:
+
+1. **Hay un disco persistente montado.** Render → tu servicio → **Settings →
+   Disks**. Debe existir un disco con **Mount Path = `/data`**. Si no hay disco:
+   créalo (necesita plan de pago; el free no tiene discos).
+2. **`DB_PATH` apunta dentro del disco.** Render → **Environment** →
+   `DB_PATH = /data/app.db`. Tras añadirla, haz **Manual Deploy**.
+
+Cómo confirmar que quedó bien: en los **logs** del servicio, al arrancar verás:
+
+```
+[db] Base de datos: /data/app.db (DB_PATH)
+```
+
+Si en su lugar ves `local (efímero)` o una ruta que no está en `/data`, los
+datos NO persisten. El dashboard también muestra un aviso rojo arriba si detecta
+que la BD no es persistente.
+
+> El código auto-detecta un disco montado en `/data` o `/var/data` aunque
+> olvides `DB_PATH`, pero lo más fiable es ponerla explícitamente.
+
+> Lo más sencillo: borra el servicio y vuelve a crearlo con **Blueprint**
+> (`render.yaml`), que ya define el disco en `/data` y `DB_PATH` correctos.
+
 ## ¿Y Vercel?
 
 Vercel es *serverless*: sin disco persistente ni procesos 24/7. Para usar Vercel
