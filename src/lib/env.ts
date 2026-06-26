@@ -36,7 +36,9 @@ export const env = {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean) as ("reel" | "youtube")[],
-  useBatchClassify: bool("USE_BATCH_CLASSIFY", true),
+  // false = clasificación inmediata (síncrona, ves las notas al instante).
+  // true = por lotes (50% más barato pero asíncrono, tarda minutos/hasta 1h).
+  useBatchClassify: bool("USE_BATCH_CLASSIFY", false),
 
   maxScriptsPerDay: num("MAX_SCRIPTS_PER_DAY", 15),
   maxDailyUsd: num("MAX_DAILY_USD", 5),

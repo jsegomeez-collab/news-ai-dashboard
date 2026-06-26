@@ -57,7 +57,7 @@ function buildUserPrompt(a: ArticleRow): string {
   );
 }
 
-function pendingArticles(userId: number, limit = 40): ArticleRow[] {
+function pendingArticles(userId: number, limit = 60): ArticleRow[] {
   return db
     .prepare(
       `SELECT a.id, a.source, a.title, a.summary, a.url
@@ -97,27 +97,39 @@ function saveClassification(userId: number, articleId: number, r: ClassResult, m
   }
 }
 
+async function classifyArticle(userId: number, apiKey: string, a: ArticleRow): Promise<boolean> {
+  try {
+    const msg = await client(apiKey).messages.create({
+      model: env.modelClassify,
+      max_tokens: 400,
+      system: SYSTEM,
+      output_config: { format: { type: "json_schema", schema: SCHEMA } },
+      messages: [{ role: "user", content: buildUserPrompt(a) }],
+    } as never);
+    recordUsage(userId, env.modelClassify, (msg as never as { usage: never }).usage);
+    const parsed = parseJsonFromText<ClassResult>(firstText(msg as never));
+    if (parsed) {
+      saveClassification(userId, a.id, parsed, env.modelClassify);
+      return true;
+    }
+  } catch (e) {
+    console.warn(`[classify] u${userId} art ${a.id}:`, (e as Error).message);
+  }
+  return false;
+}
+
+// Clasifica en paralelo con concurrencia limitada (rápido pero sin saturar la API).
 async function classifySync(userId: number, apiKey: string, articles: ArticleRow[]): Promise<number> {
+  const CONCURRENCY = 6;
   let done = 0;
-  for (const a of articles) {
-    try {
-      const msg = await client(apiKey).messages.create({
-        model: env.modelClassify,
-        max_tokens: 400,
-        system: SYSTEM,
-        output_config: { format: { type: "json_schema", schema: SCHEMA } },
-        messages: [{ role: "user", content: buildUserPrompt(a) }],
-      } as never);
-      recordUsage(userId, env.modelClassify, (msg as never as { usage: never }).usage);
-      const parsed = parseJsonFromText<ClassResult>(firstText(msg as never));
-      if (parsed) {
-        saveClassification(userId, a.id, parsed, env.modelClassify);
-        done++;
-      }
-    } catch (e) {
-      console.warn(`[classify] u${userId} art ${a.id}:`, (e as Error).message);
+  let i = 0;
+  async function worker() {
+    while (i < articles.length) {
+      const a = articles[i++];
+      if (await classifyArticle(userId, apiKey, a)) done++;
     }
   }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, articles.length) }, worker));
   return done;
 }
 
