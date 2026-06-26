@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addSwipe, deleteSwipe, listSwipe } from "@/lib/brand";
+import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return NextResponse.json({ items: listSwipe() });
+export function GET(req: NextRequest) {
+  const user = getUser(req);
+  if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+  return NextResponse.json({ items: listSwipe(user.id) });
 }
 
 export async function POST(req: NextRequest) {
+  const user = getUser(req);
+  if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const b = (await req.json().catch(() => ({}))) as {
     title?: string;
     platform?: string;
@@ -18,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!b.title?.trim() || !b.content?.trim()) {
     return NextResponse.json({ error: "Faltan título o contenido" }, { status: 400 });
   }
-  const id = addSwipe({
+  const id = addSwipe(user.id, {
     title: b.title.trim(),
     platform: b.platform?.trim() || null,
     author: b.author?.trim() || null,
@@ -29,8 +34,10 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const user = getUser(req);
+  if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const id = Number(req.nextUrl.searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "id requerido" }, { status: 400 });
-  deleteSwipe(id);
+  deleteSwipe(user.id, id);
   return NextResponse.json({ ok: true });
 }

@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { env } from "./env";
+import { readUserSettings } from "./settings";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -17,15 +17,16 @@ export type BudgetState = {
   reason: string | null;
 };
 
-export function budgetState(): BudgetState {
+export function budgetState(userId: number): BudgetState {
+  const s = readUserSettings(userId);
   const row = db
-    .prepare("SELECT scripts_count, cost_usd FROM usage_log WHERE day = ?")
-    .get(today()) as { scripts_count: number; cost_usd: number } | undefined;
+    .prepare(`SELECT scripts_count, cost_usd FROM usage_log WHERE user_id = ? AND day = ?`)
+    .get(userId, today()) as { scripts_count: number; cost_usd: number } | undefined;
 
   const scriptsToday = row?.scripts_count ?? 0;
   const costToday = row?.cost_usd ?? 0;
-  const scriptsLeft = Math.max(0, env.maxScriptsPerDay - scriptsToday);
-  const usdLeft = Math.max(0, env.maxDailyUsd - costToday);
+  const scriptsLeft = Math.max(0, s.maxScriptsPerDay - scriptsToday);
+  const usdLeft = Math.max(0, s.maxDailyUsd - costToday);
 
   let reason: string | null = null;
   if (scriptsLeft <= 0) reason = "Alcanzado el tope diario de guiones";
@@ -35,8 +36,8 @@ export function budgetState(): BudgetState {
     day: today(),
     scriptsToday,
     costToday,
-    maxScripts: env.maxScriptsPerDay,
-    maxUsd: env.maxDailyUsd,
+    maxScripts: s.maxScriptsPerDay,
+    maxUsd: s.maxDailyUsd,
     scriptsLeft,
     usdLeft,
     canGenerate: reason === null,

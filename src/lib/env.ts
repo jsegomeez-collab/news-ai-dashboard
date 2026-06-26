@@ -45,7 +45,17 @@ export const env = {
 
   twitterEnabled: bool("TWITTER_ENABLED", false),
   twitterBearer: str("TWITTER_BEARER_TOKEN"),
+
+  // Emails con rol admin (ven el uso global). Coma-separados.
+  adminEmails: str("ADMIN_EMAILS", "jsegomeez@gmail.com")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
 };
+
+export function isAdminEmail(email: string): boolean {
+  return env.adminEmails.includes(email.trim().toLowerCase());
+}
 
 export function hasApiKey(): boolean {
   return env.anthropicKey.startsWith("sk-ant-");

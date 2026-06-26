@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
-import { runCycle } from "@/lib/pipeline";
+import { NextRequest, NextResponse } from "next/server";
+import { runUserCycle } from "@/lib/pipeline";
+import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-// Permite disparar un ciclo manual desde el dashboard (botón "Actualizar ahora").
 export const maxDuration = 300;
 
-export async function POST() {
-  const result = await runCycle();
+// "Actualizar ahora": trae noticias (global) y clasifica/genera para este usuario.
+export async function POST(req: NextRequest) {
+  const user = getUser(req);
+  if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+  const result = await runUserCycle(user.id);
   return NextResponse.json(result);
 }

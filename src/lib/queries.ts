@@ -14,20 +14,20 @@ export type NewsItem = {
   actuality_link: string | null;
 };
 
-export function listNews(opts: { minRelevance?: number; limit?: number } = {}): NewsItem[] {
+export function listNews(userId: number, opts: { minRelevance?: number; limit?: number } = {}): NewsItem[] {
   const min = opts.minRelevance ?? 0;
-  const limit = opts.limit ?? 100;
+  const limit = opts.limit ?? 120;
   return db
     .prepare(
       `SELECT a.id, a.source, a.url, a.title, a.summary, a.published_at, a.fetched_at,
               c.relevance, c.category, c.business_angle, c.actuality_link
        FROM articles a
-       LEFT JOIN classifications c ON c.article_id = a.id
+       LEFT JOIN classifications c ON c.article_id = a.id AND c.user_id = ?
        WHERE c.relevance IS NULL OR c.relevance >= ?
        ORDER BY (c.relevance IS NULL), c.relevance DESC, a.fetched_at DESC
        LIMIT ?`
     )
-    .all(min, limit) as NewsItem[];
+    .all(userId, min, limit) as NewsItem[];
 }
 
 export type ScriptItem = {
@@ -56,7 +56,7 @@ export type ScriptItem = {
   notes: string | null;
 };
 
-export function listScripts(opts: { minScore?: number; limit?: number } = {}): ScriptItem[] {
+export function listScripts(userId: number, opts: { minScore?: number; limit?: number } = {}): ScriptItem[] {
   const min = opts.minScore ?? 0;
   const limit = opts.limit ?? 300;
   return db
@@ -69,15 +69,15 @@ export function listScripts(opts: { minScore?: number; limit?: number } = {}): S
        LEFT JOIN articles a ON a.id = s.article_id
        LEFT JOIN critiques cr ON cr.script_id = s.id
        LEFT JOIN script_metrics m ON m.script_id = s.id
-       WHERE COALESCE(cr.score, 0) >= ?
+       WHERE s.user_id = ? AND COALESCE(cr.score, 0) >= ?
        ORDER BY s.created_at DESC
        LIMIT ?`
     )
-    .all(min, limit) as ScriptItem[];
+    .all(userId, min, limit) as ScriptItem[];
 }
 
-export function setScriptStatus(id: number, status: string): void {
-  db.prepare(`UPDATE scripts SET status = ? WHERE id = ?`).run(status, id);
+export function setScriptStatus(userId: number, id: number, status: string): void {
+  db.prepare(`UPDATE scripts SET status = ? WHERE id = ? AND user_id = ?`).run(status, id, userId);
 }
 
 export type MetricsInput = {
@@ -90,7 +90,12 @@ export type MetricsInput = {
   notes?: string | null;
 };
 
-export function upsertMetrics(scriptId: number, m: MetricsInput): void {
+export function ownsScript(userId: number, scriptId: number): boolean {
+  return !!db.prepare(`SELECT 1 FROM scripts WHERE id = ? AND user_id = ?`).get(scriptId, userId);
+}
+
+export function upsertMetrics(userId: number, scriptId: number, m: MetricsInput): boolean {
+  if (!ownsScript(userId, scriptId)) return false;
   const n = (v: number | undefined) => Math.max(0, Math.round(v ?? 0));
   db.prepare(
     `INSERT INTO script_metrics(script_id, views, likes, comments, shares, new_followers, published_at, notes, updated_at)
@@ -110,19 +115,21 @@ export function upsertMetrics(scriptId: number, m: MetricsInput): void {
     m.notes ?? null,
     new Date().toISOString()
   );
+  return true;
 }
 
-export function stats(): {
+export function stats(userId: number): {
   articles: number;
   classified: number;
   scripts: number;
   queuePending: number;
 } {
-  const one = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+  const one = (sql: string, ...args: unknown[]) =>
+    (db.prepare(sql).get(...(args as never[])) as { n: number }).n;
   return {
     articles: one(`SELECT COUNT(*) n FROM articles`),
-    classified: one(`SELECT COUNT(*) n FROM classifications`),
-    scripts: one(`SELECT COUNT(*) n FROM scripts`),
-    queuePending: one(`SELECT COUNT(*) n FROM gen_queue WHERE done = 0`),
+    classified: one(`SELECT COUNT(*) n FROM classifications WHERE user_id = ?`, userId),
+    scripts: one(`SELECT COUNT(*) n FROM scripts WHERE user_id = ?`, userId),
+    queuePending: one(`SELECT COUNT(*) n FROM gen_queue WHERE user_id = ? AND done = 0`, userId),
   };
 }

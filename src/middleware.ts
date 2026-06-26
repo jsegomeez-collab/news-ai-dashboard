@@ -1,34 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Protección de acceso por contraseña (HTTP Basic Auth) para TODO el dashboard
-// y las APIs. Se activa solo si DASHBOARD_PASSWORD está definida; si no, la app
-// queda abierta (cómodo en local). En producción, define DASHBOARD_PASSWORD.
+const SESSION_COOKIE = "sid";
+
+// Páginas y rutas públicas (no requieren sesión).
+function isPublic(pathname: string): boolean {
+  return (
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/_next") ||
+    pathname === "/favicon.ico"
+  );
+}
+
+// El middleware (Edge) solo comprueba la PRESENCIA de la cookie; la validación
+// real contra la BD la hacen las rutas con getUser(). Si la cookie es inválida,
+// /api/auth/me devuelve 401 y el cliente redirige a /login.
 export function middleware(req: NextRequest) {
-  const password = process.env.DASHBOARD_PASSWORD;
-  if (!password) return NextResponse.next();
+  const { pathname } = req.nextUrl;
+  if (isPublic(pathname)) return NextResponse.next();
 
-  const user = process.env.DASHBOARD_USER || "admin";
-  const header = req.headers.get("authorization");
+  const hasSession = !!req.cookies.get(SESSION_COOKIE)?.value;
+  if (hasSession) return NextResponse.next();
 
-  if (header?.startsWith("Basic ")) {
-    try {
-      const decoded = atob(header.slice(6));
-      const idx = decoded.indexOf(":");
-      const u = decoded.slice(0, idx);
-      const p = decoded.slice(idx + 1);
-      if (u === user && p === password) return NextResponse.next();
-    } catch {
-      /* cabecera malformada */
-    }
+  if (pathname.startsWith("/api")) {
+    return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
-
-  return new NextResponse("Acceso restringido. Introduce usuario y contraseña.", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="AI Actualidad", charset="UTF-8"' },
-  });
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  return NextResponse.redirect(url);
 }
 
 export const config = {
-  // Protege todo excepto los assets estáticos de Next.
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

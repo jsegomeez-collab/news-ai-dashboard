@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { env, hasApiKey } from "../lib/env";
+import { env } from "../lib/env";
 import { runCycle } from "../lib/pipeline";
 
 const ONCE = process.argv.includes("--once");
@@ -14,18 +14,14 @@ async function cycle(): Promise<void> {
   if (!r.ok) console.warn(`[${ts()}] ⚠ ${r.error}`);
   console.log(
     `[${ts()}] ✔ noticias: ${r.inserted} nuevas / ${r.fetched} vistas · ` +
-      `clasificación: ${r.classify.mode} (${r.classify.count}) · ` +
-      `batches: ${r.batchesProcessed} · guiones: ${r.generated}` +
-      (r.skipped ? ` · ⏸ ${r.skipped}` : "")
+      `usuarios activos: ${r.users} · clasificadas: ${r.classified} · guiones: ${r.generated}`
   );
 }
 
 async function main(): Promise<void> {
-  console.log("=== Worker AI Actualidad ===");
-  console.log(`API key: ${hasApiKey() ? "OK" : "FALTA (solo se traerán noticias)"}`);
-  console.log(`Cron: ${env.pollCron} · umbral relevancia: ${env.relevanceThreshold} · formatos: ${env.generateFormats.join(", ")}`);
+  console.log("=== Worker AI Actualidad (multiusuario) ===");
+  console.log(`Cron: ${env.pollCron} · las noticias se traen siempre; cada usuario clasifica/genera con su clave.`);
 
-  // Ejecuta un ciclo de inmediato al arrancar.
   await cycle();
 
   if (ONCE) {

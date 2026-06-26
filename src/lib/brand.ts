@@ -1,8 +1,6 @@
 import { db } from "./db";
-import { loadKnowledge } from "./knowledge";
 import { BRAND_KINDS, BRAND_LABEL, type BrandKind } from "./status";
 
-export type BrandDoc = { kind: BrandKind; content: string; updated_at: string | null };
 export type SwipeItem = {
   id: number;
   title: string;
@@ -13,47 +11,44 @@ export type SwipeItem = {
   created_at: string;
 };
 
-export function getBrandDocs(): Record<string, string> {
-  const rows = db.prepare(`SELECT kind, content FROM brand_docs`).all() as {
-    kind: string;
-    content: string;
-  }[];
+export function getBrandDocs(userId: number): Record<string, string> {
+  const rows = db
+    .prepare(`SELECT kind, content FROM brand_docs WHERE user_id = ?`)
+    .all(userId) as { kind: string; content: string }[];
   const out: Record<string, string> = {};
   for (const r of rows) out[r.kind] = r.content ?? "";
   return out;
 }
 
-export function setBrandDoc(kind: BrandKind, content: string): void {
+export function setBrandDoc(userId: number, kind: BrandKind, content: string): void {
   db.prepare(
-    `INSERT INTO brand_docs(kind, content, updated_at) VALUES(?, ?, ?)
-     ON CONFLICT(kind) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at`
-  ).run(kind, content, new Date().toISOString());
+    `INSERT INTO brand_docs(user_id, kind, content, updated_at) VALUES(?, ?, ?, ?)
+     ON CONFLICT(user_id, kind) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at`
+  ).run(userId, kind, content, new Date().toISOString());
 }
 
-export function listSwipe(): SwipeItem[] {
+export function listSwipe(userId: number): SwipeItem[] {
   return db
-    .prepare(`SELECT * FROM swipe_files ORDER BY created_at DESC`)
-    .all() as SwipeItem[];
+    .prepare(`SELECT * FROM swipe_files WHERE user_id = ? ORDER BY created_at DESC`)
+    .all(userId) as SwipeItem[];
 }
-export function addSwipe(s: Omit<SwipeItem, "id" | "created_at">): number {
+export function addSwipe(userId: number, s: Omit<SwipeItem, "id" | "created_at">): number {
   const res = db
     .prepare(
-      `INSERT INTO swipe_files(title, platform, author, content, why, created_at)
-       VALUES(?, ?, ?, ?, ?, ?)`
+      `INSERT INTO swipe_files(user_id, title, platform, author, content, why, created_at)
+       VALUES(?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(s.title, s.platform ?? null, s.author ?? null, s.content, s.why ?? null, new Date().toISOString());
+    .run(userId, s.title, s.platform ?? null, s.author ?? null, s.content, s.why ?? null, new Date().toISOString());
   return Number(res.lastInsertRowid);
 }
-export function deleteSwipe(id: number): void {
-  db.prepare(`DELETE FROM swipe_files WHERE id = ?`).run(id);
+export function deleteSwipe(userId: number, id: number): void {
+  db.prepare(`DELETE FROM swipe_files WHERE id = ? AND user_id = ?`).run(id, userId);
 }
 
-// Tus guiones que mejor funcionaron (con métricas), para que Claude replique patrones.
-export function topPerformers(limit = 5): {
+export function topPerformers(userId: number, limit = 5): {
   title: string;
   format: string;
   hook: string;
-  body: string;
   views: number;
   likes: number;
   comments: number;
@@ -62,34 +57,27 @@ export function topPerformers(limit = 5): {
 }[] {
   return db
     .prepare(
-      `SELECT s.title, s.format, s.hook, s.body,
-              m.views, m.likes, m.comments, m.shares, m.new_followers
+      `SELECT s.title, s.format, s.hook, m.views, m.likes, m.comments, m.shares, m.new_followers
        FROM script_metrics m JOIN scripts s ON s.id = m.script_id
+       WHERE s.user_id = ?
        ORDER BY (m.views + m.likes*3 + m.comments*5 + m.shares*8 + m.new_followers*20) DESC
        LIMIT ?`
     )
-    .all(limit) as never;
+    .all(userId, limit) as never;
 }
 
-export type BrainContext = {
-  combined: string;
-  tonalidad: string;
-  hash: string;
-};
+export type BrainContext = { combined: string; tonalidad: string; hash: string };
 
-// Ensambla TODO el conocimiento: archivos /knowledge + bases editables (BD) +
-// swipe file de competencia + tus guiones que funcionaron.
-export async function buildBrain(): Promise<BrainContext> {
-  const file = await loadKnowledge();
-  const docs = getBrandDocs();
-  const swipe = listSwipe();
-  const top = topPerformers();
+export function buildBrain(userId: number): BrainContext {
+  const docs = getBrandDocs(userId);
+  const swipe = listSwipe(userId);
+  const top = topPerformers(userId);
 
   const dbBases = BRAND_KINDS.filter((k) => k !== "tonalidad" && docs[k]?.trim())
     .map((k) => `### ${BRAND_LABEL[k]}\n${docs[k]}`)
     .join("\n\n");
 
-  const tonalidad = [file.tonalidad, docs["tonalidad"]].filter(Boolean).join("\n\n");
+  const tonalidad = (docs["tonalidad"] ?? "").trim();
 
   const swipeText = swipe.length
     ? swipe
@@ -112,30 +100,31 @@ export async function buildBrain(): Promise<BrainContext> {
     : "";
 
   const combined = [
-    file.combined,
-    dbBases && `## BASES DE NEGOCIO (editadas en la app)\n${dbBases}`,
+    dbBases && `## BASES DE NEGOCIO\n${dbBases}`,
     tonalidad && `## TONALIDAD Y FORMA DE HABLAR\n${tonalidad}`,
-    swipeText &&
-      `## QUÉ FUNCIONA EN LA COMPETENCIA (swipe file — replica el patrón, no copies literal)\n${swipeText}`,
+    swipeText && `## QUÉ FUNCIONA EN LA COMPETENCIA (swipe file — replica el patrón, no copies literal)\n${swipeText}`,
     topText && `## TUS GUIONES QUE MÁS FUNCIONARON (replica lo que ya te dio resultados)\n${topText}`,
   ]
     .filter(Boolean)
     .join("\n\n---\n\n");
 
-  // Hash para caché: archivos + sellos de tiempo de la BD.
   const stamp = JSON.stringify({
-    f: file.hash,
-    d: getBrandDocsStamp(),
-    s: swipe.map((s) => s.id).join(","),
+    d: getBrandDocsStamp(userId),
+    s: swipe.map((x) => x.id).join(","),
     t: top.length,
   });
-  const hash = simpleHash(stamp);
 
-  return { combined: combined || "(Sin contexto de marca todavía.)", tonalidad, hash };
+  return {
+    combined: combined || "(Sin contexto de marca todavía: rellena tus bases en la pestaña Marca.)",
+    tonalidad,
+    hash: simpleHash(stamp),
+  };
 }
 
-function getBrandDocsStamp(): string {
-  const row = db.prepare(`SELECT MAX(updated_at) m FROM brand_docs`).get() as { m: string | null };
+function getBrandDocsStamp(userId: number): string {
+  const row = db
+    .prepare(`SELECT MAX(updated_at) m FROM brand_docs WHERE user_id = ?`)
+    .get(userId) as { m: string | null };
   return row?.m ?? "";
 }
 function simpleHash(s: string): string {

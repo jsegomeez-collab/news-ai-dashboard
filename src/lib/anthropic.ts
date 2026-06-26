@@ -1,16 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { env, hasApiKey, PRICING } from "./env";
+import { PRICING } from "./env";
 import { db } from "./db";
 
-let _client: Anthropic | null = null;
-export function client(): Anthropic {
-  if (!hasApiKey()) {
-    throw new Error(
-      "Falta ANTHROPIC_API_KEY (debe empezar por 'sk-ant-'). Copia .env.example a .env y rellénala."
-    );
+// Un cliente por clave (cada usuario trae la suya).
+const _clients = new Map<string, Anthropic>();
+export function client(apiKey: string): Anthropic {
+  if (!apiKey?.startsWith("sk-ant-")) {
+    throw new Error("Falta tu clave de Anthropic (debe empezar por 'sk-ant-'). Ponla en Ajustes.");
   }
-  if (!_client) _client = new Anthropic({ apiKey: env.anthropicKey });
-  return _client;
+  let c = _clients.get(apiKey);
+  if (!c) {
+    c = new Anthropic({ apiKey });
+    _clients.set(apiKey, c);
+  }
+  return c;
 }
 
 function today(): string {
@@ -24,9 +27,9 @@ type Usage = {
   cache_read_input_tokens?: number | null;
 };
 
-// Registra coste estimado en usage_log. Las lecturas de caché cuentan ~0.1x
-// y las escrituras ~1.25x sobre el precio de input.
-export function recordUsage(model: string, usage: Usage, scripts = 0): void {
+// Registra coste estimado en usage_log POR USUARIO. Las lecturas de caché
+// cuentan ~0.1x y las escrituras ~1.25x sobre el precio de input.
+export function recordUsage(userId: number, model: string, usage: Usage, scripts = 0): void {
   const price = PRICING[model] ?? { in: 3, out: 15 };
   const inTok = usage.input_tokens ?? 0;
   const outTok = usage.output_tokens ?? 0;
@@ -41,15 +44,15 @@ export function recordUsage(model: string, usage: Usage, scripts = 0): void {
     1_000_000;
 
   db.prepare(
-    `INSERT INTO usage_log(day, calls, input_tokens, output_tokens, cost_usd, scripts_count)
-     VALUES(?, 1, ?, ?, ?, ?)
-     ON CONFLICT(day) DO UPDATE SET
+    `INSERT INTO usage_log(user_id, day, calls, input_tokens, output_tokens, cost_usd, scripts_count)
+     VALUES(?, ?, 1, ?, ?, ?, ?)
+     ON CONFLICT(user_id, day) DO UPDATE SET
        calls = calls + 1,
        input_tokens = input_tokens + excluded.input_tokens,
        output_tokens = output_tokens + excluded.output_tokens,
        cost_usd = cost_usd + excluded.cost_usd,
        scripts_count = scripts_count + excluded.scripts_count`
-  ).run(today(), inTok + cacheRead + cacheWrite, outTok, cost, scripts);
+  ).run(userId, today(), inTok + cacheRead + cacheWrite, outTok, cost, scripts);
 }
 
 // Extrae el primer bloque de texto de una respuesta de Messages.

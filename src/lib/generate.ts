@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { client, recordUsage, firstText, parseJsonFromText } from "./anthropic";
 import { buildBrain } from "./brand";
-import { getGenModel, getFormats } from "./settings";
+import { readUserSettings } from "./settings";
 
 type Format = "reel" | "youtube";
 
@@ -41,41 +41,43 @@ function formatBrief(format: Format): string {
   if (format === "reel") {
     return (
       "FORMATO: VIDEO CORTO (Reel/TikTok/Short), 30-90 segundos hablados. " +
-      "Gancho potente en los primeros 3 segundos, desarrollo ágil con UNA idea central, ritmo de frases cortas, " +
-      "y CTA final claro. El 'body' debe ser texto hablado natural, no bullets."
+      "Gancho potente en los primeros 3 segundos, desarrollo ágil con UNA idea central, ritmo de frases cortas, y CTA final claro. " +
+      "El 'body' debe ser texto hablado natural, no bullets."
     );
   }
   return (
     "FORMATO: YOUTUBE LARGO (5-10 min). Estructura: gancho, contexto/por qué importa, desarrollo en 2-4 puntos, " +
-    "ejemplo práctico aplicado a negocio, y cierre con CTA. El 'body' debe incluir las secciones marcadas y ser " +
-    "guion hablado listo para grabar."
+    "ejemplo práctico aplicado a negocio, y cierre con CTA. El 'body' debe incluir las secciones y ser guion hablado listo para grabar."
   );
 }
 
-function getArticle(articleId: number): ArticleCtx | null {
+function getArticle(userId: number, articleId: number): ArticleCtx | null {
   return (
     (db
       .prepare(
         `SELECT a.id, a.title, a.summary, a.url, a.source,
                 c.category, c.business_angle, c.actuality_link
-         FROM articles a LEFT JOIN classifications c ON c.article_id = a.id
+         FROM articles a
+         LEFT JOIN classifications c ON c.article_id = a.id AND c.user_id = ?
          WHERE a.id = ?`
       )
-      .get(articleId) as ArticleCtx | undefined) ?? null
+      .get(userId, articleId) as ArticleCtx | undefined) ?? null
   );
 }
 
 export async function generateForArticle(
+  userId: number,
   articleId: number,
   formats?: Format[]
 ): Promise<number[]> {
-  const article = getArticle(articleId);
+  const article = getArticle(userId, articleId);
   if (!article) return [];
-  const brain = await buildBrain();
-  const model = getGenModel();
-  const useFormats = formats ?? getFormats();
+  const s = readUserSettings(userId);
+  if (!s.anthropicKey.startsWith("sk-ant-")) return [];
+  const brain = buildBrain(userId);
+  const model = s.genModel;
+  const useFormats = formats ?? s.formats;
 
-  // System estable (mismo prefijo en todas las generaciones) → caché reutilizable.
   const system = [
     { type: "text" as const, text: PERSONA },
     {
@@ -92,40 +94,30 @@ export async function generateForArticle(
       `--- NOTICIA ---\nFuente: ${article.source}\nTitular: ${article.title}\n` +
       `Resumen: ${(article.summary || "").slice(0, 1000)}\nURL: ${article.url}\n` +
       `Categoría: ${article.category ?? "-"}\nÁngulo de negocio: ${article.business_angle ?? "-"}\n` +
-      `Conexión con actualidad: ${article.actuality_link ?? "-"}\n\n` +
-      `Escribe el mejor guion posible para este formato.`;
+      `Conexión con actualidad: ${article.actuality_link ?? "-"}\n\nEscribe el mejor guion posible para este formato.`;
 
     try {
-      const msg = await client().messages.create({
+      const msg = await client(s.anthropicKey).messages.create({
         model,
         max_tokens: format === "youtube" ? 8000 : 1500,
         system,
         output_config: { format: { type: "json_schema", schema: SCRIPT_SCHEMA } },
         messages: [{ role: "user", content: userPrompt }],
       } as never);
-      recordUsage(model, (msg as never as { usage: never }).usage, 1);
+      recordUsage(userId, model, (msg as never as { usage: never }).usage, 1);
 
       const out = parseJsonFromText<ScriptOut>(firstText(msg as never));
       if (!out) continue;
 
       const res = db
         .prepare(
-          `INSERT INTO scripts(article_id, format, title, hook, body, cta, status, model, created_at)
-           VALUES(?, ?, ?, ?, ?, ?, 'borrador', ?, ?)`
+          `INSERT INTO scripts(user_id, article_id, format, title, hook, body, cta, status, model, created_at)
+           VALUES(?, ?, ?, ?, ?, ?, ?, 'borrador', ?, ?)`
         )
-        .run(
-          article.id,
-          format,
-          out.title,
-          out.hook,
-          out.body,
-          out.cta,
-          model,
-          new Date().toISOString()
-        );
+        .run(userId, article.id, format, out.title, out.hook, out.body, out.cta, model, new Date().toISOString());
       createdIds.push(Number(res.lastInsertRowid));
     } catch (e) {
-      console.warn(`[generate] error art ${articleId} (${format}):`, (e as Error).message);
+      console.warn(`[generate] u${userId} art ${articleId} (${format}):`, (e as Error).message);
     }
   }
   return createdIds;

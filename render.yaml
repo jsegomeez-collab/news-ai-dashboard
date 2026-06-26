@@ -1,0 +1,29 @@
+# Blueprint de Render. Importa el repo en Render → "New + → Blueprint" y
+# detecta este archivo. Crea el servicio web + el disco persistente.
+#
+# IMPORTANTE: el disco persistente requiere un plan de PAGO (starter o superior).
+# En el plan free no hay disco y la base de datos (cuentas, guiones...) se
+# perdería en cada redeploy.
+services:
+  - type: web
+    name: ai-actualidad
+    runtime: node
+    plan: starter
+    region: frankfurt
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DB_PATH
+        value: /data/app.db
+      - key: ADMIN_EMAILS
+        value: jsegomeez@gmail.com
+      - key: POLL_CRON
+        value: "*/10 * * * *"
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1

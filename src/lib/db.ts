@@ -55,6 +55,40 @@ export const db = {
 
 function initSchema(r: DatabaseSync): void {
   r.exec(`
+-- ===== Cuentas y sesiones (auth nativa sobre SQLite) =====
+CREATE TABLE IF NOT EXISTS users (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  email          TEXT NOT NULL UNIQUE,
+  name           TEXT,
+  password_hash  TEXT NOT NULL,
+  created_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token       TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- Ajustes por usuario (incluida su clave de Anthropic y los parámetros de generación).
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id                INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  anthropic_key          TEXT NOT NULL DEFAULT '',
+  gen_model              TEXT NOT NULL DEFAULT 'claude-opus-4-8',
+  auto_generate          INTEGER NOT NULL DEFAULT 1,
+  gen_relevance_threshold INTEGER NOT NULL DEFAULT 80,
+  news_min_relevance     INTEGER NOT NULL DEFAULT 55,
+  max_scripts_per_day    INTEGER NOT NULL DEFAULT 15,
+  max_daily_usd          REAL NOT NULL DEFAULT 5,
+  formats                TEXT NOT NULL DEFAULT 'reel,youtube',
+  window_minutes         INTEGER NOT NULL DEFAULT 0,   -- 0 = sin ventana (siempre activo)
+  window_interval_hours  INTEGER NOT NULL DEFAULT 0,   -- 0 = sin ventana (siempre activo)
+  updated_at             TEXT
+);
+
+-- ===== Noticias: pool GLOBAL compartido (se trae una sola vez) =====
 CREATE TABLE IF NOT EXISTS articles (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   source        TEXT NOT NULL,
@@ -67,19 +101,23 @@ CREATE TABLE IF NOT EXISTS articles (
 );
 CREATE INDEX IF NOT EXISTS idx_articles_fetched ON articles(fetched_at DESC);
 
+-- ===== Todo lo demás es PRIVADO por usuario =====
 CREATE TABLE IF NOT EXISTS classifications (
-  article_id      INTEGER PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  article_id      INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   relevance       INTEGER NOT NULL,
   category        TEXT,
   business_angle  TEXT,
   actuality_link  TEXT,
   model           TEXT,
-  created_at      TEXT NOT NULL
+  created_at      TEXT NOT NULL,
+  PRIMARY KEY (user_id, article_id)
 );
-CREATE INDEX IF NOT EXISTS idx_class_relevance ON classifications(relevance DESC);
+CREATE INDEX IF NOT EXISTS idx_class_relevance ON classifications(user_id, relevance DESC);
 
 CREATE TABLE IF NOT EXISTS scripts (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   article_id  INTEGER REFERENCES articles(id) ON DELETE SET NULL,
   format      TEXT NOT NULL,
   title       TEXT,
@@ -90,7 +128,7 @@ CREATE TABLE IF NOT EXISTS scripts (
   model       TEXT,
   created_at  TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_scripts_created ON scripts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scripts_user ON scripts(user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS critiques (
   script_id    INTEGER PRIMARY KEY REFERENCES scripts(id) ON DELETE CASCADE,
@@ -104,52 +142,50 @@ CREATE TABLE IF NOT EXISTS critiques (
 );
 
 CREATE TABLE IF NOT EXISTS usage_log (
-  day            TEXT PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day            TEXT NOT NULL,
   calls          INTEGER NOT NULL DEFAULT 0,
   input_tokens   INTEGER NOT NULL DEFAULT 0,
   output_tokens  INTEGER NOT NULL DEFAULT 0,
   cost_usd       REAL NOT NULL DEFAULT 0,
-  scripts_count  INTEGER NOT NULL DEFAULT 0
+  scripts_count  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
 );
 
-CREATE TABLE IF NOT EXISTS settings (
-  key   TEXT PRIMARY KEY,
-  value TEXT
-);
-
--- Cola simple de generación: artículos relevantes pendientes de convertir en guion.
 CREATE TABLE IF NOT EXISTS gen_queue (
-  article_id  INTEGER PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  article_id  INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   enqueued_at TEXT NOT NULL,
-  done        INTEGER NOT NULL DEFAULT 0
+  done        INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, article_id)
 );
 
--- Lotes de clasificación en curso (Batch API).
 CREATE TABLE IF NOT EXISTS classify_batches (
   batch_id    TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at  TEXT NOT NULL,
   status      TEXT NOT NULL DEFAULT 'in_progress'
 );
 
--- Bases de negocio / tonalidad / historia editables desde el frontend.
 CREATE TABLE IF NOT EXISTS brand_docs (
-  kind        TEXT PRIMARY KEY,   -- problema | cliente-ideal | oferta | competencia | tonalidad | historia
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,
   content     TEXT,
-  updated_at  TEXT
+  updated_at  TEXT,
+  PRIMARY KEY (user_id, kind)
 );
 
--- "Swipe file": guiones de la competencia que funcionaron, para replicar lo que va bien.
 CREATE TABLE IF NOT EXISTS swipe_files (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title       TEXT NOT NULL,
   platform    TEXT,
   author      TEXT,
   content     TEXT NOT NULL,
-  why         TEXT,               -- por qué funcionó (opcional)
+  why         TEXT,
   created_at  TEXT NOT NULL
 );
 
--- Métricas de rendimiento de tus propios guiones publicados.
 CREATE TABLE IF NOT EXISTS script_metrics (
   script_id      INTEGER PRIMARY KEY REFERENCES scripts(id) ON DELETE CASCADE,
   views          INTEGER NOT NULL DEFAULT 0,
@@ -164,14 +200,3 @@ CREATE TABLE IF NOT EXISTS script_metrics (
 `);
 }
 
-export function getSetting(key: string): string | null {
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
-    | { value: string }
-    | undefined;
-  return row?.value ?? null;
-}
-export function setSetting(key: string, value: string): void {
-  db.prepare(
-    "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).run(key, value);
-}

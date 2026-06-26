@@ -57,8 +57,21 @@ git push -u origin main
 
 ---
 
-## Opción B — Render
+## Opción B — Render (este repo ya trae `render.yaml`)
 
+**Camino rápido (Blueprint):**
+1. https://render.com → **New + → Blueprint** → conecta el repo `news-ai-dashboard`.
+2. Render lee `render.yaml` y crea el servicio web **+ el disco persistente en
+   `/data`** y las variables (`DB_PATH`, `ADMIN_EMAILS`, `NODE_VERSION=24`).
+3. Pulsa **Apply**. En unos minutos tendrás la URL pública.
+4. Entra → **Crear cuenta** con `jsegomeez@gmail.com` → serás **admin**
+   automáticamente (verás la pestaña 🛡️ Admin con el uso de todos).
+
+> ⚠️ El `render.yaml` usa `plan: starter` (de pago) porque **el disco
+> persistente lo requiere**. Si lo dejas en free, perderás los datos en cada
+> redeploy. Cada usuario pone su propia clave de Anthropic en Ajustes.
+
+**Camino manual (sin Blueprint):**
 1. https://render.com → **New → Web Service** → conecta tu repo.
 2. Configura:
    - **Runtime:** Node
@@ -78,12 +91,14 @@ git push -u origin main
 
 | Variable | Obligatoria | Valor |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | ✅ | Tu clave (genera una nueva) |
-| `DASHBOARD_PASSWORD` | ✅ (en producción) | Contraseña de acceso |
-| `DASHBOARD_USER` | — | Usuario (por defecto `admin`) |
 | `DB_PATH` | ✅ (con disco) | `/data/app.db` |
-| `MAX_DAILY_USD` | — | Tope de gasto diario |
+| `POLL_CRON` | — | Frecuencia del worker (def. `*/10 * * * *`) |
 | Resto | — | Ver `.env.example` |
+
+> **La app es multiusuario:** no hay clave global ni contraseña global. Cada
+> persona crea su cuenta (registro/login nativo sobre SQLite) y mete **su propia
+> clave de Anthropic** en Ajustes; su consumo se carga a su cuenta. Por eso ya
+> no se configuran `ANTHROPIC_API_KEY` ni `DASHBOARD_PASSWORD` como variables.
 
 ---
 

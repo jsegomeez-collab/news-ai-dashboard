@@ -1,54 +1,98 @@
 import { db } from "./db";
-import { hasApiKey } from "./env";
 import { pollAllSources } from "./sources";
 import { classifyPending, pollClassifyBatches } from "./classify";
 import { generateForArticle } from "./generate";
 import { critiqueScript } from "./critique";
 import { budgetState } from "./budget";
-import { getAutoGenerate } from "./settings";
+import { readUserSettings, withinGenerationWindow } from "./settings";
 
-// Procesa la cola de generación respetando el tope diario y el modo automático.
-export async function processGenQueue(): Promise<{ generated: number; skipped: string | null }> {
-  if (!getAutoGenerate()) {
-    return { generated: 0, skipped: "Generación automática desactivada (modo manual)" };
-  }
+// Usuarios que tienen una clave de Anthropic configurada.
+export function activeUserIds(): number[] {
+  return (
+    db
+      .prepare(`SELECT user_id FROM user_settings WHERE anthropic_key LIKE 'sk-ant-%'`)
+      .all() as { user_id: number }[]
+  ).map((r) => r.user_id);
+}
+
+// Procesa la cola de generación de un usuario respetando auto, ventana y topes.
+export async function processGenQueue(
+  userId: number
+): Promise<{ generated: number; skipped: string | null }> {
+  const s = readUserSettings(userId);
+  if (!s.autoGenerate) return { generated: 0, skipped: "Generación automática desactivada" };
+  if (!withinGenerationWindow(s)) return { generated: 0, skipped: "Fuera de la ventana de generación" };
+
   const queued = db
-    .prepare(`SELECT article_id FROM gen_queue WHERE done = 0 ORDER BY enqueued_at ASC`)
-    .all() as { article_id: number }[];
+    .prepare(`SELECT article_id FROM gen_queue WHERE user_id = ? AND done = 0 ORDER BY enqueued_at ASC`)
+    .all(userId) as { article_id: number }[];
 
   let generated = 0;
   for (const { article_id } of queued) {
-    const budget = budgetState();
-    if (!budget.canGenerate) {
-      return { generated, skipped: budget.reason };
-    }
-    const scriptIds = await generateForArticle(article_id);
+    const budget = budgetState(userId);
+    if (!budget.canGenerate) return { generated, skipped: budget.reason };
+    const scriptIds = await generateForArticle(userId, article_id);
     for (const sid of scriptIds) {
       await critiqueScript(sid);
       generated++;
     }
-    db.prepare(`UPDATE gen_queue SET done = 1 WHERE article_id = ?`).run(article_id);
+    db.prepare(`UPDATE gen_queue SET done = 1 WHERE user_id = ? AND article_id = ?`).run(userId, article_id);
   }
   return { generated, skipped: null };
 }
 
-// Generación MANUAL bajo demanda (botón "Guionizar"). Ignora el modo automático
-// pero respeta el tope de gasto diario. Marca el artículo como hecho en la cola.
+// Generación MANUAL bajo demanda (botón "Guionizar"). Ignora auto y ventana,
+// pero respeta el tope de gasto diario.
 export async function generateNow(
+  userId: number,
   articleId: number
 ): Promise<{ ok: boolean; generated: number; error?: string }> {
-  const budget = budgetState();
+  const s = readUserSettings(userId);
+  if (!s.anthropicKey.startsWith("sk-ant-")) {
+    return { ok: false, generated: 0, error: "Configura tu clave de Anthropic en Ajustes." };
+  }
+  const budget = budgetState(userId);
   if (!budget.canGenerate) return { ok: false, generated: 0, error: budget.reason ?? "Tope diario alcanzado" };
   try {
-    const scriptIds = await generateForArticle(articleId);
+    // Si el artículo no está clasificado para este usuario, clasifícalo primero (sync rápido).
+    const classified = db
+      .prepare(`SELECT 1 FROM classifications WHERE user_id = ? AND article_id = ?`)
+      .get(userId, articleId);
+    if (!classified) await classifyOne(userId, articleId);
+
+    const scriptIds = await generateForArticle(userId, articleId);
     for (const sid of scriptIds) await critiqueScript(sid);
     db.prepare(
-      `INSERT INTO gen_queue(article_id, enqueued_at, done) VALUES(?, ?, 1)
-       ON CONFLICT(article_id) DO UPDATE SET done = 1`
-    ).run(articleId, new Date().toISOString());
+      `INSERT INTO gen_queue(user_id, article_id, enqueued_at, done) VALUES(?, ?, ?, 1)
+       ON CONFLICT(user_id, article_id) DO UPDATE SET done = 1`
+    ).run(userId, articleId, new Date().toISOString());
     return { ok: true, generated: scriptIds.length };
   } catch (e) {
     return { ok: false, generated: 0, error: (e as Error).message };
+  }
+}
+
+// Clasifica un único artículo de forma síncrona (para el botón Guionizar).
+async function classifyOne(userId: number, articleId: number): Promise<void> {
+  // Reutiliza classifyPending forzando un único pendiente sería complejo; en su
+  // lugar, si no está clasificado, lanzamos clasificación general (clasifica los
+  // pendientes recientes, incluido este). Barato con Haiku.
+  await classifyPending(userId);
+}
+
+// Ciclo para UN usuario (botón "Actualizar ahora"): fetch global + clasificar
+// y generar para este usuario. La generación respeta auto/ventana/topes.
+export async function runUserCycle(
+  userId: number
+): Promise<{ ok: boolean; inserted: number; classified: number; generated: number; error?: string }> {
+  try {
+    const poll = await pollAllSources();
+    await pollClassifyBatches(userId);
+    const c = await classifyPending(userId);
+    const g = await processGenQueue(userId);
+    return { ok: true, inserted: poll.inserted, classified: c.count, generated: g.generated };
+  } catch (e) {
+    return { ok: false, inserted: 0, classified: 0, generated: 0, error: (e as Error).message };
   }
 }
 
@@ -57,44 +101,33 @@ export type CycleSummary = {
   error?: string;
   fetched: number;
   inserted: number;
-  classify: { mode: string; count: number };
-  batchesProcessed: number;
+  users: number;
+  classified: number;
   generated: number;
-  skipped: string | null;
 };
 
-// Un ciclo completo: traer → clasificar → recoger batches → generar guiones.
+// Un ciclo completo: fetch GLOBAL + por cada usuario clasificar y generar.
 export async function runCycle(): Promise<CycleSummary> {
-  const base: CycleSummary = {
-    ok: true,
-    fetched: 0,
-    inserted: 0,
-    classify: { mode: "none", count: 0 },
-    batchesProcessed: 0,
-    generated: 0,
-    skipped: null,
-  };
-
+  const base: CycleSummary = { ok: true, fetched: 0, inserted: 0, users: 0, classified: 0, generated: 0 };
   try {
     const poll = await pollAllSources();
     base.fetched = poll.fetched;
     base.inserted = poll.inserted;
 
-    if (!hasApiKey()) {
-      return {
-        ...base,
-        ok: false,
-        error: "Sin ANTHROPIC_API_KEY: se traen noticias pero no se clasifican ni generan guiones.",
-      };
+    const users = activeUserIds();
+    base.users = users.length;
+
+    for (const userId of users) {
+      try {
+        await pollClassifyBatches(userId);
+        const c = await classifyPending(userId);
+        base.classified += c.count;
+        const g = await processGenQueue(userId);
+        base.generated += g.generated;
+      } catch (e) {
+        console.warn(`[cycle] u${userId}:`, (e as Error).message);
+      }
     }
-
-    // Primero recoge resultados de batches anteriores (pueden llenar la cola).
-    base.batchesProcessed = await pollClassifyBatches();
-    base.classify = await classifyPending();
-    const gen = await processGenQueue();
-    base.generated = gen.generated;
-    base.skipped = gen.skipped;
-
     return base;
   } catch (e) {
     return { ...base, ok: false, error: (e as Error).message };

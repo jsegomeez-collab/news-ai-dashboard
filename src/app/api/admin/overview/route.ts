@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listScripts } from "@/lib/queries";
 import { getUser } from "@/lib/auth";
+import { adminOverview } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 
 export function GET(req: NextRequest) {
   const user = getUser(req);
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-
-  const min = Number(req.nextUrl.searchParams.get("min") ?? "0");
-  const limit = Number(req.nextUrl.searchParams.get("limit") ?? "300");
-  return NextResponse.json({ items: listScripts(user.id, { minScore: min, limit }) });
+  if (!user.isAdmin) return NextResponse.json({ error: "Solo administradores" }, { status: 403 });
+  return NextResponse.json(adminOverview());
 }

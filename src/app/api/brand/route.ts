@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBrandDocs, setBrandDoc, listSwipe } from "@/lib/brand";
 import { BRAND_KINDS, type BrandKind } from "@/lib/status";
+import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return NextResponse.json({ docs: getBrandDocs(), swipe: listSwipe() });
+export function GET(req: NextRequest) {
+  const user = getUser(req);
+  if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+  return NextResponse.json({ docs: getBrandDocs(user.id), swipe: listSwipe(user.id) });
 }
 
 export async function POST(req: NextRequest) {
+  const user = getUser(req);
+  if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const body = (await req.json().catch(() => ({}))) as { kind?: string; content?: string };
   if (!body.kind || !(BRAND_KINDS as readonly string[]).includes(body.kind)) {
     return NextResponse.json({ error: "kind inválido" }, { status: 400 });
   }
-  setBrandDoc(body.kind as BrandKind, body.content ?? "");
+  setBrandDoc(user.id, body.kind as BrandKind, body.content ?? "");
   return NextResponse.json({ ok: true });
 }
