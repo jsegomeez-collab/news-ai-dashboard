@@ -423,6 +423,7 @@ export default function CompetenciaPage() {
   const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [analyzeMsg, setAnalyzeMsg] = useState("");
   const [transcribing, setTranscribing] = useState<number | null>(null);
+  const [running, setRunning] = useState<"transcribe" | "full" | null>(null);
   const [polling, setPolling] = useState(false);
   const [pollMsg, setPollMsg] = useState("");
 
@@ -444,6 +445,21 @@ export default function CompetenciaPage() {
       setPollMsg(json.message ?? (json.ok ? "Hecho" : "Error"));
       if (json.inserted && json.inserted > 0) { refreshVideos(); }
     } finally { setPolling(false); }
+  }, [refreshVideos]);
+
+  const handleRun = useCallback(async (mode: "transcribe" | "full") => {
+    setRunning(mode); setAnalyzeMsg("");
+    try {
+      const res = await fetch("/api/competitors/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      const json = await res.json() as { ok?: boolean; summary?: string; noKey?: boolean; error?: string };
+      if (json.noKey) setAnalyzeMsg("⚠️ Añade tu clave de OpenAI en Ajustes para transcribir.");
+      else setAnalyzeMsg(json.summary ?? json.error ?? (json.ok ? "Hecho" : "Error"));
+      refreshVideos();
+    } finally { setRunning(null); }
   }, [refreshVideos]);
 
   const handleTranscribe = useCallback(async (videoId: number) => {
@@ -554,12 +570,27 @@ export default function CompetenciaPage() {
       {/* ── VIDEOS ── */}
       {tab === "videos" && (
         <div className="space-y-4">
-          {/* filtros */}
-          <div className="flex flex-wrap items-center gap-3">
-            <button onClick={handlePoll} disabled={polling}
+          {/* filtros y acciones batch */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={handlePoll} disabled={polling || !!running}
               className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
               {polling ? "Buscando…" : "↻ Descubrir"}
             </button>
+
+            {pendingVideos.length > 0 && (
+              <button onClick={() => handleRun("transcribe")} disabled={!!running || !!transcribing}
+                className="rounded bg-indigo-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+                {running === "transcribe" ? "Transcribiendo…" : `🎙 Transcribir todos (${pendingVideos.length})`}
+              </button>
+            )}
+
+            {(pendingVideos.length > 0 || videos.some(v => v.status === "analysing")) && (
+              <button onClick={() => handleRun("full")} disabled={!!running || !!transcribing}
+                className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+                {running === "full" ? "Procesando… (puede tardar unos minutos)" : "🤖 Auto-pilot: transcribir + analizar + guiones"}
+              </button>
+            )}
+
             <select value={accountFilter ?? ""} onChange={(e) => setAccountFilter(e.target.value ? Number(e.target.value) : undefined)}
               className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200">
               <option value="">Todas las cuentas</option>
@@ -567,11 +598,11 @@ export default function CompetenciaPage() {
                 <option key={a.id} value={a.id}>{PLATFORM_ICON[a.platform]} @{a.handle}</option>
               ))}
             </select>
-            <span className="text-xs text-zinc-500">
-              {videos.length} videos · {doneVideos.length} analizados · {pendingVideos.length} pendientes
-            </span>
-            {analyzing !== null && (
-              <span className="text-xs text-amber-400">Generando guion… un momento</span>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-zinc-500">
+            <span>{videos.length} videos · {doneVideos.length} analizados · {pendingVideos.length} pendientes</span>
+            {(analyzing !== null || running) && (
+              <span className="text-amber-400">Procesando… puede tardar unos minutos</span>
             )}
           </div>
 
