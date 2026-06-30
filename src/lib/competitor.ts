@@ -223,14 +223,15 @@ export function insertVideo(
     shares?: number;
     duration_sec?: number;
     published_at?: string;
+    media_url?: string;
   }
 ): number | null {
   try {
     const res = db
       .prepare(
         `INSERT OR IGNORE INTO competitor_videos(account_id, video_url, video_id, title, description, thumbnail_url,
-          views, likes, comments, shares, duration_sec, published_at, fetched_at, status)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+          views, likes, comments, shares, duration_sec, published_at, media_url, fetched_at, status)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
       )
       .run(
         accountId,
@@ -245,6 +246,7 @@ export function insertVideo(
         data.shares ?? null,
         data.duration_sec ?? null,
         data.published_at ?? null,
+        data.media_url ?? null,
         new Date().toISOString()
       );
     return res.changes > 0 ? Number(res.lastInsertRowid) : null;
@@ -360,15 +362,25 @@ export function pendingVideos(): { id: number; video_url: string; account_id: nu
 }
 
 // Videos pendientes de transcribir con el user_id del propietario de la cuenta.
-export function pendingVideosWithUser(limit = 5): { id: number; video_url: string; user_id: number }[] {
+// Incluye plataforma y media_url para que el transcriptor elija la vía correcta
+// (Instagram → mp4 directo vía fetch; YouTube/TikTok → yt-dlp).
+export type PendingVideo = {
+  id: number;
+  video_url: string;
+  user_id: number;
+  platform: string;
+  media_url: string | null;
+};
+
+export function pendingVideosWithUser(limit = 5): PendingVideo[] {
   return db
     .prepare(
-      `SELECT cv.id, cv.video_url, ca.user_id
+      `SELECT cv.id, cv.video_url, cv.media_url, ca.user_id, ca.platform
        FROM competitor_videos cv
        JOIN competitor_accounts ca ON ca.id = cv.account_id
        WHERE cv.status = 'pending'
        ORDER BY cv.fetched_at ASC
        LIMIT ?`
     )
-    .all(limit) as { id: number; video_url: string; user_id: number }[];
+    .all(limit) as PendingVideo[];
 }

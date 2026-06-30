@@ -17,6 +17,8 @@ export type YtdlpVideoMeta = {
   thumbnail: string | null;
   upload_date: string | null; // YYYYMMDD
   extractor_key: string | null;
+  media_url?: string | null;  // mp4 directo (solo Instagram vía Apify); yt-dlp no lo rellena
+  published_iso?: string | null; // ISO 8601 directo (proveedores que ya lo dan, p.ej. Apify)
 };
 
 // Comprueba si yt-dlp está disponible en PATH.

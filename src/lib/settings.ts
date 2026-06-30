@@ -3,6 +3,7 @@ import { db } from "./db";
 export type UserSettings = {
   anthropicKey: string;
   openaiKey: string;
+  apifyToken: string;
   genModel: string;
   autoGenerate: boolean;
   genRelevanceThreshold: number;
@@ -17,6 +18,7 @@ export type UserSettings = {
 type Row = {
   anthropic_key: string;
   openai_key: string;
+  apify_token: string;
   gen_model: string;
   auto_generate: number;
   gen_relevance_threshold: number;
@@ -40,6 +42,7 @@ export function readUserSettings(userId: number): UserSettings {
   return {
     anthropicKey: r.anthropic_key ?? "",
     openaiKey: r.openai_key ?? "",
+    apifyToken: r.apify_token ?? "",
     genModel: r.gen_model || "claude-opus-4-8",
     autoGenerate: !!r.auto_generate,
     genRelevanceThreshold: r.gen_relevance_threshold,
@@ -60,6 +63,7 @@ export function writeUserSettings(userId: number, p: Partial<UserSettings>): Use
   const map: [keyof UserSettings, string, (v: unknown) => unknown][] = [
     ["anthropicKey", "anthropic_key", (v) => String(v ?? "").trim()],
     ["openaiKey", "openai_key", (v) => String(v ?? "").trim()],
+    ["apifyToken", "apify_token", (v) => String(v ?? "").trim()],
     ["genModel", "gen_model", (v) => String(v)],
     ["autoGenerate", "auto_generate", (v) => (v ? 1 : 0)],
     ["genRelevanceThreshold", "gen_relevance_threshold", (v) => clampInt(v, 0, 100)],

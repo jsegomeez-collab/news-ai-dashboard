@@ -5,6 +5,7 @@ import { usePoll } from "@/components/usePoll";
 type Settings = {
   anthropicKey: string;
   openaiKey: string;
+  apifyToken: string;
   genModel: string;
   autoGenerate: boolean;
   genRelevanceThreshold: number;
@@ -45,6 +46,8 @@ export default function AjustesPage() {
   const [savedKey, setSavedKey] = useState(false);
   const [oaiKeyInput, setOaiKeyInput] = useState("");
   const [savedOaiKey, setSavedOaiKey] = useState(false);
+  const [apifyInput, setApifyInput] = useState("");
+  const [savedApify, setSavedApify] = useState(false);
   const { data: status } = usePoll<Status>("/api/status", 15000);
 
   async function load() {
@@ -54,6 +57,7 @@ export default function AjustesPage() {
     setOpts(json.modelOptions);
     setKeyInput(json.settings.anthropicKey);
     setOaiKeyInput(json.settings.openaiKey);
+    setApifyInput(json.settings.apifyToken);
   }
   useEffect(() => {
     load();
@@ -78,6 +82,11 @@ export default function AjustesPage() {
     await patch({ openaiKey: oaiKeyInput });
     setSavedOaiKey(true);
     setTimeout(() => setSavedOaiKey(false), 1500);
+  }
+  async function saveApify() {
+    await patch({ apifyToken: apifyInput });
+    setSavedApify(true);
+    setTimeout(() => setSavedApify(false), 1500);
   }
 
   if (!s) return <p className="text-sm text-zinc-500">Cargando…</p>;
@@ -137,6 +146,32 @@ export default function AjustesPage() {
         </div>
         <p className="mt-2 text-xs text-zinc-600">
           Solo se usa para el módulo de Espionaje de Competencia. Tu consumo de Anthropic no varía.
+        </p>
+      </Card>
+
+      <Card title={`Instagram (Apify) ${savedApify ? "· guardado ✓" : ""}`}>
+        <p className="mb-2 text-sm text-zinc-400">
+          Instagram bloquea el scraping directo desde servidores. Apify lo hace de forma
+          segura con proxies residenciales (no expone tu IP ni ninguna cuenta). Consigue tu token en{" "}
+          <a href="https://console.apify.com/account/integrations" target="_blank" rel="noreferrer" className="text-brand hover:underline">
+            console.apify.com
+          </a>
+          . ~$0.5–2 por 1000 reels.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="password"
+            value={apifyInput}
+            onChange={(e) => setApifyInput(e.target.value)}
+            placeholder="apify_api_..."
+            className="flex-1 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand"
+          />
+          <button onClick={saveApify} className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white">
+            Guardar
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-zinc-600">
+          Sin token, las cuentas de Instagram se omiten. YouTube y TikTok no lo necesitan.
         </p>
       </Card>
 

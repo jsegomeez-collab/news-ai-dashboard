@@ -318,5 +318,17 @@ CREATE INDEX IF NOT EXISTS idx_comp_scripts_video ON competitor_scripts(video_id
     r.exec(`ALTER TABLE user_settings ADD COLUMN openai_key TEXT NOT NULL DEFAULT ''`);
     console.log("[db] columna openai_key añadida a user_settings");
   }
+  if (!cols.some((c) => c.name === "apify_token")) {
+    r.exec(`ALTER TABLE user_settings ADD COLUMN apify_token TEXT NOT NULL DEFAULT ''`);
+    console.log("[db] columna apify_token añadida a user_settings");
+  }
+
+  // media_url: URL directa del mp4 (Instagram vía Apify) para descargar el audio
+  // sin yt-dlp. Las URLs de Instagram caducan, por eso se transcriben en el mismo ciclo.
+  const vcols = r.prepare(`PRAGMA table_info(competitor_videos)`).all() as { name: string }[];
+  if (!vcols.some((c) => c.name === "media_url")) {
+    r.exec(`ALTER TABLE competitor_videos ADD COLUMN media_url TEXT`);
+    console.log("[db] columna media_url añadida a competitor_videos");
+  }
 }
 

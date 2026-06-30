@@ -1,5 +1,7 @@
 import { accountsDue, markAccountChecked, insertVideo } from "./competitor";
 import { ytdlpAvailable, fetchRecentVideos, videoPageUrl, parseYtdlpDate, type YtdlpVideoMeta } from "./ytdlp";
+import { fetchRecentReels } from "./providers/instagram";
+import { readUserSettings } from "./settings";
 
 export type CompetitorPollResult = {
   available: boolean;
@@ -8,26 +10,41 @@ export type CompetitorPollResult = {
   skipped: number;
 };
 
-// Revisa las cuentas de competencia que toca comprobar y descubre videos nuevos.
-// Se llama desde el worker (global, todas las cuentas activas de todos los usuarios).
-export async function pollCompetitorAccounts(): Promise<CompetitorPollResult> {
-  if (!(await ytdlpAvailable())) {
-    return { available: false, checked: 0, inserted: 0, skipped: 0 };
-  }
+type DueAccount = {
+  id: number;
+  user_id: number;
+  platform: string;
+  handle: string;
+  url: string;
+  check_interval_hours: number;
+  min_views: number;
+  min_likes: number;
+  min_comments: number;
+};
 
-  const accounts = accountsDue();
+// Revisa las cuentas de competencia que toca comprobar y descubre videos nuevos.
+// Enrutado por plataforma:
+//   • instagram → Apify (proxies residenciales, no expone IP ni cuenta)
+//   • youtube / tiktok → yt-dlp
+export async function pollCompetitorAccounts(): Promise<CompetitorPollResult> {
+  const accounts = accountsDue() as DueAccount[];
+  if (accounts.length === 0) return { available: true, checked: 0, inserted: 0, skipped: 0 };
+
+  // yt-dlp solo hace falta para youtube/tiktok; Instagram va por Apify.
+  const hasYtdlp = await ytdlpAvailable();
   let checked = 0, inserted = 0, skipped = 0;
 
   for (const account of accounts) {
     try {
-      const videos = await fetchRecentVideos(account.url, 20);
+      const videos = await fetchForAccount(account, hasYtdlp);
+      if (videos === null) { markAccountChecked(account.id); continue; } // no disponible (sin token / sin yt-dlp)
+
       markAccountChecked(account.id);
       checked++;
 
+      let added = 0, dropped = 0;
       for (const v of videos) {
-        const result = evaluateVideo(v, account);
-        if (result === "skip") { skipped++; continue; }
-
+        if (evaluateVideo(v, account) === "skip") { dropped++; skipped++; continue; }
         const id = insertVideo(account.id, {
           video_url: videoPageUrl(v),
           video_id: v.id,
@@ -39,29 +56,40 @@ export async function pollCompetitorAccounts(): Promise<CompetitorPollResult> {
           comments: v.comment_count ?? undefined,
           shares: v.repost_count ?? undefined,
           duration_sec: v.duration ?? undefined,
-          published_at: parseYtdlpDate(v.upload_date) ?? undefined,
+          published_at: v.published_iso ?? parseYtdlpDate(v.upload_date) ?? undefined,
+          media_url: v.media_url ?? undefined,
         });
-        if (id !== null) inserted++;
+        if (id !== null) { added++; inserted++; }
       }
-
-      console.log(`[competitor] @${account.handle}: ${videos.length} vistos → ${inserted} nuevos, ${skipped} omitidos`);
+      console.log(`[competitor] @${account.handle} (${account.platform}): ${videos.length} vistos → ${added} nuevos, ${dropped} omitidos`);
     } catch (e) {
       const msg = (e as Error).message ?? "";
-      // Instagram bloquea scrapers desde IPs de datacenter sin cookies de sesión.
-      if (account.platform === "instagram" || msg.toLowerCase().includes("instagram")) {
-        console.warn(
-          `[competitor] @${account.handle} (Instagram): bloqueado desde servidor. ` +
-          `Instagram requiere cookies de sesión; solo YouTube funciona sin autenticación desde la nube. ` +
-          `Elimina esta cuenta y usa su canal de YouTube si tiene uno.`
-        );
-      } else {
-        console.warn(`[competitor] @${account.handle} falló:`, msg.slice(0, 200));
-      }
+      console.warn(`[competitor] @${account.handle} (${account.platform}) falló:`, msg.slice(0, 200));
       markAccountChecked(account.id); // evitar hammering en error
     }
   }
 
   return { available: true, checked, inserted, skipped };
+}
+
+// Devuelve los videos de una cuenta, o null si esa plataforma no está disponible
+// (Instagram sin token de Apify, o yt-dlp no instalado para youtube/tiktok).
+async function fetchForAccount(account: DueAccount, hasYtdlp: boolean): Promise<YtdlpVideoMeta[] | null> {
+  if (account.platform === "instagram") {
+    const token = readUserSettings(account.user_id).apifyToken;
+    if (!token) {
+      console.warn(`[competitor] @${account.handle}: Instagram requiere token de Apify (Ajustes → Instagram). Omitida.`);
+      return null;
+    }
+    return fetchRecentReels(account.handle, token, 20);
+  }
+
+  // youtube / tiktok
+  if (!hasYtdlp) {
+    console.warn(`[competitor] @${account.handle}: yt-dlp no instalado, ${account.platform} omitida.`);
+    return null;
+  }
+  return fetchRecentVideos(account.url, 20);
 }
 
 // "skip" = claramente bajo umbral. "insert" = pasa o métrica desconocida (se filtrará en Fase 3).

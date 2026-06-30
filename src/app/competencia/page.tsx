@@ -512,13 +512,18 @@ export default function CompetenciaPage() {
 
           {accounts.length > 0 && (
             <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 p-4 text-sm text-amber-300/80">
-              <p className="font-semibold mb-1">⚙️ Para activar el descubrimiento automático (Fase 2)</p>
-              <p className="text-xs text-amber-400/70">
-                Instala <code className="bg-amber-950/60 px-1 rounded">yt-dlp</code> y <code className="bg-amber-950/60 px-1 rounded">ffmpeg</code> en el servidor:{" "}
-                <code className="bg-amber-950/60 px-1 rounded">brew install yt-dlp ffmpeg</code> (macOS) /{" "}
-                <code className="bg-amber-950/60 px-1 rounded">pip install yt-dlp</code> + apt ffmpeg (Linux/Render).
-                También necesitarás añadir tu clave de OpenAI en Ajustes para las transcripciones.
-              </p>
+              <p className="font-semibold mb-1">⚙️ Para activar el descubrimiento automático</p>
+              <ul className="text-xs text-amber-400/70 space-y-1 list-disc pl-4">
+                <li>
+                  <b>📸 Instagram:</b> añade tu <b>token de Apify</b> en Ajustes (scraping seguro desde
+                  servidor; no necesita yt-dlp).
+                </li>
+                <li>
+                  <b>▶️ YouTube / 🎵 TikTok:</b> requieren <code className="bg-amber-950/60 px-1 rounded">yt-dlp</code> + <code className="bg-amber-950/60 px-1 rounded">ffmpeg</code> en el servidor{" "}
+                  (<code className="bg-amber-950/60 px-1 rounded">brew install yt-dlp ffmpeg</code> en macOS).
+                </li>
+                <li>Para las transcripciones, añade tu <b>clave de OpenAI</b> en Ajustes.</li>
+              </ul>
             </div>
           )}
         </div>

@@ -146,23 +146,36 @@ que la BD no es persistente.
 
 ## 🕵️ Módulo de Espionaje de Competencia
 
-### Dependencias extra
+Cada plataforma usa una vía distinta de descubrimiento, según cómo se deja scrapear:
 
-El módulo de espionaje de competencia requiere dos herramientas del sistema:
-
-| Herramienta | Para qué | Instalar |
+| Plataforma | Vía | Requiere |
 |---|---|---|
-| `yt-dlp` | Descubrir y descargar videos de TikTok, Instagram, YouTube | Ver abajo |
-| `ffmpeg` | Convertir el audio a mp3 para Whisper | Ver abajo |
+| 📸 **Instagram** | **Apify** (proxies residenciales gestionados) | Token de Apify por usuario |
+| ▶️ **YouTube** | `yt-dlp` | `yt-dlp` + `ffmpeg` en el servidor |
+| 🎵 **TikTok** | `yt-dlp` | `yt-dlp` + `ffmpeg` en el servidor |
+
+> **Importante:** Instagram **bloquea** el scraping directo desde IPs de datacenter
+> (Render, AWS…). Por eso Instagram NO usa yt-dlp sino Apify, que hace el scraping
+> de forma segura con proxies residenciales: no expone la IP del servidor ni
+> arriesga ninguna cuenta de Instagram.
+
+### A) Instagram → token de Apify (recomendado, sin instalar nada)
+
+1. Crea una cuenta en https://apify.com (tiene crédito gratis mensual).
+2. Copia tu token en **Account → Integrations**: `console.apify.com/account/integrations`.
+3. Pégalo en la app: **⚙️ Ajustes → Instagram (Apify)**.
+
+Coste aproximado: ~$0.5–2 por cada 1000 reels descubiertos. El mp4 se descarga
+directo (sin yt-dlp ni ffmpeg) y se manda a Whisper.
+
+### B) YouTube / TikTok → yt-dlp + ffmpeg
 
 **macOS (desarrollo local):**
 ```bash
 brew install yt-dlp ffmpeg
 ```
 
-**Render / Railway (producción):**
-
-En `render.yaml` o en el panel del host, añade en el **Build Command**:
+**Render / Railway (producción):** en el **Build Command** añade:
 ```
 pip install yt-dlp && apt-get install -y ffmpeg || true && npm install && npm run build
 ```
@@ -172,22 +185,27 @@ O usa un Dockerfile con:
 RUN apt-get update && apt-get install -y ffmpeg python3-pip && pip install yt-dlp
 ```
 
+> Si solo te interesa Instagram, **no necesitas yt-dlp ni ffmpeg en absoluto.**
+
 ### Clave de OpenAI (para transcripción)
 
 Cada usuario debe poner su clave de OpenAI en **⚙️ Ajustes → OpenAI (transcripción)**.
-Se usa solo para transcribir el audio de los videos via Whisper (~$0.006/min, muy barato).
+Se usa para transcribir el audio de los videos via Whisper (~$0.006/min, muy barato).
 
 ### Flujo automático
 
 ```
 Worker cada 2h
-  → pollCompetitorAccounts()  [yt-dlp, descarga metadatos]
-  → transcribePendingVideos() [yt-dlp audio + Whisper]
+  → pollCompetitorAccounts()  [Instagram: Apify · YouTube/TikTok: yt-dlp]
+  → transcribePendingVideos() [Instagram: mp4 directo · otros: yt-dlp → Whisper]
   → processAnalysingVideos()  [Claude: análisis viral + guion adaptado]
 ```
 
-Sin `yt-dlp` instalado: el módulo se desactiva silenciosamente (log: `yt-dlp: no instalado`).
-Sin clave OpenAI del usuario: el video queda en estado `pending` hasta que la configuren.
+- Sin token de Apify: las cuentas de Instagram se omiten (log claro), el resto sigue.
+- Sin `yt-dlp`: solo se omiten YouTube/TikTok; Instagram funciona igual.
+- Sin clave OpenAI del usuario: el video queda en `pending` hasta que la configuren.
+- Las URLs de mp4 de Instagram caducan; por eso descubrimiento y transcripción
+  corren en el mismo ciclo, y hay re-fetch automático vía Apify si la URL expiró.
 
 ---
 
