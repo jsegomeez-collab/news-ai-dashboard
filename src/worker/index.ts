@@ -12,9 +12,22 @@ async function cycle(): Promise<void> {
   console.log(`\n[${ts()}] ▶ ciclo iniciado`);
   const r = await runCycle();
   if (!r.ok) console.warn(`[${ts()}] ⚠ ${r.error}`);
+  const comp = r.competitor;
+  const trans = r.transcribed;
+  const compStr = !comp
+    ? ""
+    : !comp.available
+    ? " · yt-dlp: no instalado"
+    : ` · espías: +${comp.inserted} videos`;
+  const transStr = trans && trans.processed > 0
+    ? ` · transcriptos: ${trans.processed}`
+    : trans && trans.noKey > 0
+    ? ` · transcripción: sin clave OpenAI`
+    : "";
+
   console.log(
-    `[${ts()}] ✔ noticias: ${r.inserted} nuevas / ${r.fetched} vistas · ` +
-      `usuarios activos: ${r.users} · clasificadas: ${r.classified} · guiones: ${r.generated}`
+    `[${ts()}] ✔ noticias: ${r.inserted}/${r.fetched} · ` +
+      `u${r.users} · clasif: ${r.classified} · guiones: ${r.generated}${compStr}${transStr}`
   );
 }
 

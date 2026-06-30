@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 const baseTabs = [
   { href: "/", label: "📰 Noticias en vivo" },
   { href: "/guiones", label: "🎬 Guiones" },
+  { href: "/competencia", label: "🕵️ Competencia" },
   { href: "/marca", label: "🧠 Marca" },
   { href: "/ajustes", label: "⚙️ Ajustes" },
 ];

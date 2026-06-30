@@ -230,6 +230,88 @@ CREATE TABLE IF NOT EXISTS script_metrics (
   notes          TEXT,
   updated_at     TEXT
 );
+
+-- ===== ESPIONAJE DE COMPETENCIA =====
+CREATE TABLE IF NOT EXISTS competitor_accounts (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id              INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  platform             TEXT NOT NULL,
+  handle               TEXT NOT NULL,
+  url                  TEXT NOT NULL,
+  display_name         TEXT,
+  active               INTEGER NOT NULL DEFAULT 1,
+  min_views            INTEGER NOT NULL DEFAULT 50000,
+  min_likes            INTEGER NOT NULL DEFAULT 0,
+  min_comments         INTEGER NOT NULL DEFAULT 300,
+  check_interval_hours INTEGER NOT NULL DEFAULT 6,
+  last_checked_at      TEXT,
+  created_at           TEXT NOT NULL,
+  UNIQUE(user_id, platform, handle)
+);
+CREATE INDEX IF NOT EXISTS idx_comp_accounts_user ON competitor_accounts(user_id);
+
+CREATE TABLE IF NOT EXISTS competitor_videos (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id    INTEGER NOT NULL REFERENCES competitor_accounts(id) ON DELETE CASCADE,
+  video_url     TEXT NOT NULL UNIQUE,
+  video_id      TEXT,
+  title         TEXT,
+  description   TEXT,
+  thumbnail_url TEXT,
+  views         INTEGER,
+  likes         INTEGER,
+  comments      INTEGER,
+  shares        INTEGER,
+  duration_sec  INTEGER,
+  published_at  TEXT,
+  fetched_at    TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'pending',
+  error_msg     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_comp_videos_account ON competitor_videos(account_id, fetched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_comp_videos_status  ON competitor_videos(status);
+
+CREATE TABLE IF NOT EXISTS competitor_transcripts (
+  video_id    INTEGER PRIMARY KEY REFERENCES competitor_videos(id) ON DELETE CASCADE,
+  text        TEXT NOT NULL,
+  language    TEXT,
+  model       TEXT,
+  created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS competitor_analyses (
+  video_id          INTEGER PRIMARY KEY REFERENCES competitor_videos(id) ON DELETE CASCADE,
+  hook              TEXT,
+  hook_type         TEXT,
+  winning_idea      TEXT,
+  curiosity_gap     TEXT,
+  viral_pattern     TEXT,
+  why_it_works      TEXT,
+  content_structure TEXT,
+  viral_score       INTEGER,
+  model             TEXT,
+  created_at        TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS competitor_scripts (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id         INTEGER NOT NULL REFERENCES competitor_videos(id) ON DELETE CASCADE,
+  user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  format           TEXT NOT NULL,
+  title            TEXT,
+  hook             TEXT,
+  body             TEXT,
+  cta              TEXT,
+  adaptation_notes TEXT,
+  status           TEXT NOT NULL DEFAULT 'borrador',
+  model            TEXT,
+  created_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_comp_scripts_user  ON competitor_scripts(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_comp_scripts_video ON competitor_scripts(video_id);
 `);
+
+  // Columnas añadidas en versiones posteriores — idempotentes gracias a IF NOT EXISTS.
+  try { r.exec(`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS openai_key TEXT NOT NULL DEFAULT ''`); } catch { /* ya existe */ }
 }
 

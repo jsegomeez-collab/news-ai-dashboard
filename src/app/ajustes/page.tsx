@@ -4,6 +4,7 @@ import { usePoll } from "@/components/usePoll";
 
 type Settings = {
   anthropicKey: string;
+  openaiKey: string;
   genModel: string;
   autoGenerate: boolean;
   genRelevanceThreshold: number;
@@ -42,6 +43,8 @@ export default function AjustesPage() {
   const [opts, setOpts] = useState<ModelOption[]>([]);
   const [keyInput, setKeyInput] = useState("");
   const [savedKey, setSavedKey] = useState(false);
+  const [oaiKeyInput, setOaiKeyInput] = useState("");
+  const [savedOaiKey, setSavedOaiKey] = useState(false);
   const { data: status } = usePoll<Status>("/api/status", 15000);
 
   async function load() {
@@ -50,6 +53,7 @@ export default function AjustesPage() {
     setS(json.settings);
     setOpts(json.modelOptions);
     setKeyInput(json.settings.anthropicKey);
+    setOaiKeyInput(json.settings.openaiKey);
   }
   useEffect(() => {
     load();
@@ -69,6 +73,11 @@ export default function AjustesPage() {
     await patch({ anthropicKey: keyInput });
     setSavedKey(true);
     setTimeout(() => setSavedKey(false), 1500);
+  }
+  async function saveOaiKey() {
+    await patch({ openaiKey: oaiKeyInput });
+    setSavedOaiKey(true);
+    setTimeout(() => setSavedOaiKey(false), 1500);
   }
 
   if (!s) return <p className="text-sm text-zinc-500">Cargando…</p>;
@@ -103,6 +112,31 @@ export default function AjustesPage() {
         </div>
         <p className="mt-2 text-xs text-amber-400/80">
           ⚠️ La clave se guarda tal cual en el servidor. Úsala solo si confías en quien lo administra.
+        </p>
+      </Card>
+
+      <Card title={`OpenAI (transcripción) ${savedOaiKey ? "· guardada ✓" : ""}`}>
+        <p className="mb-2 text-sm text-zinc-400">
+          Para transcribir reels y TikToks de la competencia via Whisper. Consíguela en{" "}
+          <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-brand hover:underline">
+            platform.openai.com
+          </a>
+          . ~$0.006/min de audio (muy barato).
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="password"
+            value={oaiKeyInput}
+            onChange={(e) => setOaiKeyInput(e.target.value)}
+            placeholder="sk-..."
+            className="flex-1 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand"
+          />
+          <button onClick={saveOaiKey} className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white">
+            Guardar
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-zinc-600">
+          Solo se usa para el módulo de Espionaje de Competencia. Tu consumo de Anthropic no varía.
         </p>
       </Card>
 

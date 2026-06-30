@@ -2,19 +2,21 @@ import { db } from "./db";
 
 export type UserSettings = {
   anthropicKey: string;
+  openaiKey: string;
   genModel: string;
   autoGenerate: boolean;
-  genRelevanceThreshold: number; // relevancia mínima para generar guion
-  newsMinRelevance: number; // relevancia mínima para mostrar en el feed
+  genRelevanceThreshold: number;
+  newsMinRelevance: number;
   maxScriptsPerDay: number;
   maxDailyUsd: number;
   formats: ("reel" | "youtube")[];
-  windowMinutes: number; // duración de cada ráfaga de generación (0 = sin ventana)
-  windowIntervalHours: number; // cada cuántas horas arranca una ráfaga (0 = siempre activo)
+  windowMinutes: number;
+  windowIntervalHours: number;
 };
 
 type Row = {
   anthropic_key: string;
+  openai_key: string;
   gen_model: string;
   auto_generate: number;
   gen_relevance_threshold: number;
@@ -37,6 +39,7 @@ export function readUserSettings(userId: number): UserSettings {
   const r = db.prepare(`SELECT * FROM user_settings WHERE user_id = ?`).get(userId) as Row;
   return {
     anthropicKey: r.anthropic_key ?? "",
+    openaiKey: r.openai_key ?? "",
     genModel: r.gen_model || "claude-opus-4-8",
     autoGenerate: !!r.auto_generate,
     genRelevanceThreshold: r.gen_relevance_threshold,
@@ -56,6 +59,7 @@ export function writeUserSettings(userId: number, p: Partial<UserSettings>): Use
   ensure(userId);
   const map: [keyof UserSettings, string, (v: unknown) => unknown][] = [
     ["anthropicKey", "anthropic_key", (v) => String(v ?? "").trim()],
+    ["openaiKey", "openai_key", (v) => String(v ?? "").trim()],
     ["genModel", "gen_model", (v) => String(v)],
     ["autoGenerate", "auto_generate", (v) => (v ? 1 : 0)],
     ["genRelevanceThreshold", "gen_relevance_threshold", (v) => clampInt(v, 0, 100)],

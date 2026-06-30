@@ -142,6 +142,55 @@ que la BD no es persistente.
 > Lo más sencillo: borra el servicio y vuelve a crearlo con **Blueprint**
 > (`render.yaml`), que ya define el disco en `/data` y `DB_PATH` correctos.
 
+---
+
+## 🕵️ Módulo de Espionaje de Competencia
+
+### Dependencias extra
+
+El módulo de espionaje de competencia requiere dos herramientas del sistema:
+
+| Herramienta | Para qué | Instalar |
+|---|---|---|
+| `yt-dlp` | Descubrir y descargar videos de TikTok, Instagram, YouTube | Ver abajo |
+| `ffmpeg` | Convertir el audio a mp3 para Whisper | Ver abajo |
+
+**macOS (desarrollo local):**
+```bash
+brew install yt-dlp ffmpeg
+```
+
+**Render / Railway (producción):**
+
+En `render.yaml` o en el panel del host, añade en el **Build Command**:
+```
+pip install yt-dlp && apt-get install -y ffmpeg || true && npm install && npm run build
+```
+
+O usa un Dockerfile con:
+```dockerfile
+RUN apt-get update && apt-get install -y ffmpeg python3-pip && pip install yt-dlp
+```
+
+### Clave de OpenAI (para transcripción)
+
+Cada usuario debe poner su clave de OpenAI en **⚙️ Ajustes → OpenAI (transcripción)**.
+Se usa solo para transcribir el audio de los videos via Whisper (~$0.006/min, muy barato).
+
+### Flujo automático
+
+```
+Worker cada 2h
+  → pollCompetitorAccounts()  [yt-dlp, descarga metadatos]
+  → transcribePendingVideos() [yt-dlp audio + Whisper]
+  → processAnalysingVideos()  [Claude: análisis viral + guion adaptado]
+```
+
+Sin `yt-dlp` instalado: el módulo se desactiva silenciosamente (log: `yt-dlp: no instalado`).
+Sin clave OpenAI del usuario: el video queda en estado `pending` hasta que la configuren.
+
+---
+
 ## ¿Y Vercel?
 
 Vercel es *serverless*: sin disco persistente ni procesos 24/7. Para usar Vercel

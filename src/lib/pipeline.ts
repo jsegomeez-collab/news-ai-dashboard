@@ -5,6 +5,9 @@ import { generateForArticle } from "./generate";
 import { critiqueScript } from "./critique";
 import { budgetState } from "./budget";
 import { readUserSettings, withinGenerationWindow } from "./settings";
+import { pollCompetitorAccounts, type CompetitorPollResult } from "./competitor-pipeline";
+import { transcribePendingVideos, type TranscribeResult } from "./whisper";
+import { processAnalysingVideos } from "./competitor-generate";
 
 // Usuarios que tienen una clave de Anthropic configurada.
 export function activeUserIds(): number[] {
@@ -104,15 +107,35 @@ export type CycleSummary = {
   users: number;
   classified: number;
   generated: number;
+  competitor: CompetitorPollResult | null;
+  transcribed: TranscribeResult | null;
 };
 
-// Un ciclo completo: fetch GLOBAL + por cada usuario clasificar y generar.
+// Un ciclo completo: fetch GLOBAL + competencia (descubrimiento + transcripción) + por usuario (clasificar/generar).
 export async function runCycle(): Promise<CycleSummary> {
-  const base: CycleSummary = { ok: true, fetched: 0, inserted: 0, users: 0, classified: 0, generated: 0 };
+  const base: CycleSummary = { ok: true, fetched: 0, inserted: 0, users: 0, classified: 0, generated: 0, competitor: null, transcribed: null };
   try {
-    const poll = await pollAllSources();
+    // Fase 1: noticias + descubrimiento de competencia en paralelo.
+    const [poll, competitor] = await Promise.all([
+      pollAllSources(),
+      pollCompetitorAccounts().catch((e) => {
+        console.warn("[cycle] descubrimiento competencia falló:", (e as Error).message);
+        return null;
+      }),
+    ]);
     base.fetched = poll.fetched;
     base.inserted = poll.inserted;
+    base.competitor = competitor;
+
+    // Fase 2: transcripción + análisis/generación (secuenciales, tras el descubrimiento).
+    base.transcribed = await transcribePendingVideos(5).catch((e) => {
+      console.warn("[cycle] transcripción falló:", (e as Error).message);
+      return null;
+    });
+    // Procesa videos ya transcritos (estado 'analysing') → análisis viral + guion adaptado.
+    await processAnalysingVideos(3).catch((e) =>
+      console.warn("[cycle] análisis competencia falló:", (e as Error).message)
+    );
 
     const users = activeUserIds();
     base.users = users.length;
