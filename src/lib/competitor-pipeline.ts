@@ -46,7 +46,17 @@ export async function pollCompetitorAccounts(): Promise<CompetitorPollResult> {
 
       console.log(`[competitor] @${account.handle}: ${videos.length} vistos → ${inserted} nuevos, ${skipped} omitidos`);
     } catch (e) {
-      console.warn(`[competitor] @${account.handle} falló:`, (e as Error).message.slice(0, 200));
+      const msg = (e as Error).message ?? "";
+      // Instagram bloquea scrapers desde IPs de datacenter sin cookies de sesión.
+      if (account.platform === "instagram" || msg.toLowerCase().includes("instagram")) {
+        console.warn(
+          `[competitor] @${account.handle} (Instagram): bloqueado desde servidor. ` +
+          `Instagram requiere cookies de sesión; solo YouTube funciona sin autenticación desde la nube. ` +
+          `Elimina esta cuenta y usa su canal de YouTube si tiene uno.`
+        );
+      } else {
+        console.warn(`[competitor] @${account.handle} falló:`, msg.slice(0, 200));
+      }
       markAccountChecked(account.id); // evitar hammering en error
     }
   }

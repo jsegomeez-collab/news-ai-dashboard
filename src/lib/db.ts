@@ -311,7 +311,12 @@ CREATE INDEX IF NOT EXISTS idx_comp_scripts_user  ON competitor_scripts(user_id,
 CREATE INDEX IF NOT EXISTS idx_comp_scripts_video ON competitor_scripts(video_id);
 `);
 
-  // Columnas añadidas en versiones posteriores — idempotentes gracias a IF NOT EXISTS.
-  try { r.exec(`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS openai_key TEXT NOT NULL DEFAULT ''`); } catch { /* ya existe */ }
+  // Columnas añadidas en versiones posteriores. Usamos PRAGMA para no depender
+  // de la sintaxis "IF NOT EXISTS" de ALTER TABLE (no disponible en SQLite < 3.37).
+  const cols = r.prepare(`PRAGMA table_info(user_settings)`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === "openai_key")) {
+    r.exec(`ALTER TABLE user_settings ADD COLUMN openai_key TEXT NOT NULL DEFAULT ''`);
+    console.log("[db] columna openai_key añadida a user_settings");
+  }
 }
 
