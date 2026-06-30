@@ -57,6 +57,7 @@ export type CompetitorScriptItem = {
   format: string;
   title: string | null;
   hook: string | null;
+  puente: string | null;
   body: string | null;
   cta: string | null;
   adaptation_notes: string | null;
@@ -300,15 +301,15 @@ export function saveAdaptedScript(
   userId: number,
   videoId: number,
   format: string,
-  out: { title: string; hook: string; body: string; cta: string; adaptation_notes?: string },
+  out: { title: string; hook: string; puente?: string; body: string; cta: string; adaptation_notes?: string },
   model: string
 ): number {
   const res = db
     .prepare(
-      `INSERT INTO competitor_scripts(video_id, user_id, format, title, hook, body, cta, adaptation_notes, status, model, created_at)
-       VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'borrador', ?, ?)`
+      `INSERT INTO competitor_scripts(video_id, user_id, format, title, hook, puente, body, cta, adaptation_notes, status, model, created_at)
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 'borrador', ?, ?)`
     )
-    .run(videoId, userId, format, out.title, out.hook, out.body, out.cta, out.adaptation_notes ?? null, model, new Date().toISOString());
+    .run(videoId, userId, format, out.title, out.hook, out.puente ?? null, out.body, out.cta, out.adaptation_notes ?? null, model, new Date().toISOString());
   return Number(res.lastInsertRowid);
 }
 
@@ -317,7 +318,8 @@ export function saveAdaptedScript(
 export function listAdaptedScripts(userId: number, limit = 100): CompetitorScriptItem[] {
   return db
     .prepare(
-      `SELECT cs.*, cv.video_url, cv.title as video_title, cv.views, cv.likes, cv.comments,
+      `SELECT cs.id, cs.video_id, cs.user_id, cs.format, cs.title, cs.hook, cs.puente, cs.body, cs.cta, cs.adaptation_notes, cs.status, cs.model, cs.created_at,
+              cv.video_url, cv.title as video_title, cv.views, cv.likes, cv.comments,
               ca.handle as account_handle, ca.platform as account_platform,
               an.hook as original_hook, an.viral_score
        FROM competitor_scripts cs

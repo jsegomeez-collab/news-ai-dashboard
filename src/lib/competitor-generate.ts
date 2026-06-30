@@ -43,19 +43,21 @@ const ANALYSIS_SYSTEM =
 const ADAPTED_SCHEMA = {
   type: "object",
   properties: {
-    title:            { type: "string", description: "Título interno del guion (corto)." },
-    hook:             { type: "string", description: "Gancho adaptado a la marca del creador, con la misma fuerza que el original." },
-    body:             { type: "string", description: "Cuerpo del guion listo para grabar, con la misma estructura que el original pero adaptado a su oferta/audiencia/tonalidad." },
+    title:            { type: "string", description: "Título interno del guion (corto, para identificarlo)." },
+    hook:             { type: "string", description: "COPIA LITERAL, PALABRA POR PALABRA, de los primeros ~10 segundos del video original. Extráelo de las primeras líneas de la transcripción. NO cambies ni una sola palabra. Este es el patrón que lo viralizó y debe permanecer intacto." },
+    puente:           { type: "string", description: "1-3 frases de transición que conectan el hook original (idéntico) con el vehículo único del creador. Debe sonar natural: el oyente pasa del hook viral a la propuesta de la marca sin notar el corte. Usa la voz y tonalidad del creador." },
+    body:             { type: "string", description: "Cuerpo del guion a partir del puente: 100% la marca del creador, su oferta, su audiencia, su tonalidad. Mantén la estructura rítmica del original (mismo número de beats, misma cadencia) pero con el contenido propio." },
     cta:              { type: "string", description: "CTA alineado con la oferta del creador." },
-    adaptation_notes: { type: "string", description: "En 1-2 frases: qué has cambiado y por qué funciona igual (o mejor) para su marca." },
+    adaptation_notes: { type: "string", description: "En 1 frase: en qué segundo/línea empieza el puente y qué cambias para conectar con su marca." },
   },
-  required: ["title", "hook", "body", "cta", "adaptation_notes"],
+  required: ["title", "hook", "puente", "body", "cta", "adaptation_notes"],
   additionalProperties: false,
 } as const;
 
 type AdaptedOut = {
   title: string;
   hook: string;
+  puente: string;
   body: string;
   cta: string;
   adaptation_notes: string;
@@ -63,11 +65,16 @@ type AdaptedOut = {
 
 const ADAPTED_PERSONA =
   "Eres el Head of Content de una marca personal de IA aplicada a negocios digitales. " +
-  "Te han dado la transcripción de un reel viral de la competencia y el análisis de por qué funciona. " +
-  "Tu misión: replicar la ESTRUCTURA y la FÓRMULA GANADORA (mismo hook, mismo patrón psicológico, misma estructura) " +
-  "pero llevándola COMPLETAMENTE a la marca, tonalidad, oferta y audiencia del creador. " +
-  "El resultado tiene que sonar 100% a él/ella, no a la competencia. " +
-  "No copies literalmente — replica la esencia. Devuelve SOLO JSON válido.";
+  "Te han dado la transcripción de un reel viral de la competencia y el análisis de por qué funciona.\n\n" +
+  "REGLA ABSOLUTA — EL HOOK ES SAGRADO:\n" +
+  "Los primeros ~10 segundos del guion son IDÉNTICOS al original, palabra por palabra. " +
+  "El campo 'hook' en tu respuesta debe ser una copia EXACTA de las primeras líneas de la transcripción. " +
+  "No parafrasees, no mejores, no adaptes — COPIA LITERAL. " +
+  "Este es el patrón viral y no se toca. El oyente escucha exactamente lo mismo que en el video que ya se viralizó.\n\n" +
+  "Lo que SÍ adaptas: el 'puente' (transición hook→marca) y el 'body' (contenido de la marca). " +
+  "El resultado final debe sonar 100% a la marca del creador desde el puente en adelante, " +
+  "pero los primeros 10 segundos son el gancho original sin cambiar nada. " +
+  "Devuelve SOLO JSON válido.";
 
 function formatBrief(format: "reel" | "youtube"): string {
   return format === "reel"
@@ -144,17 +151,26 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
 
   for (const format of formats) {
     try {
+      // Las primeras ~150 palabras suelen cubrir los primeros 10 segundos de un reel.
+      const transcript = video.transcript!;
+      const firstWords = transcript.split(/\s+/).slice(0, 150).join(" ");
+
       const genPrompt =
         `${formatBrief(format as "reel" | "youtube")}\n\n` +
         `--- VIDEO ORIGINAL (@${video.account_handle}, ${video.account_platform}) ---\n` +
         `Vistas: ${video.views?.toLocaleString() ?? "?"}  Likes: ${video.likes?.toLocaleString() ?? "?"}  Comentarios: ${video.comments?.toLocaleString() ?? "?"}\n\n` +
-        (videoWithAnalysis?.hook ? `GANCHO ORIGINAL: ${videoWithAnalysis.hook}\n` : "") +
+        (videoWithAnalysis?.hook ? `GANCHO ANALIZADO: ${videoWithAnalysis.hook}\n` : "") +
         (videoWithAnalysis?.hook_type ? `TIPO DE GANCHO: ${videoWithAnalysis.hook_type}\n` : "") +
         (videoWithAnalysis?.winning_idea ? `IDEA GANADORA: ${videoWithAnalysis.winning_idea}\n` : "") +
         (videoWithAnalysis?.why_it_works ? `POR QUÉ FUNCIONA: ${videoWithAnalysis.why_it_works}\n` : "") +
         (videoWithAnalysis?.content_structure ? `ESTRUCTURA: ${videoWithAnalysis.content_structure}\n` : "") +
-        `\n--- TRANSCRIPCIÓN ORIGINAL ---\n${video.transcript!.slice(0, 3000)}\n\n` +
-        `Adapta este video a mi marca manteniendo la misma fórmula viral. El guion debe sonar a mí, no a la competencia.`;
+        `\n--- PRIMERAS ~150 PALABRAS (≈10 seg) — ESTO VA EN 'hook', LITERAL, SIN CAMBIAR NADA ---\n${firstWords}\n` +
+        `\n--- TRANSCRIPCIÓN COMPLETA ---\n${transcript.slice(0, 3000)}\n\n` +
+        `INSTRUCCIÓN:\n` +
+        `1. Campo 'hook': copia EXACTAMENTE las primeras ~150 palabras de arriba. Ni una palabra diferente.\n` +
+        `2. Campo 'puente': 1-3 frases que conecten ese hook con mi marca/oferta de forma natural.\n` +
+        `3. Campo 'body': el resto del guion 100% adaptado a mi marca (voz, oferta, audiencia).\n` +
+        `El oyente escucha el hook idéntico al viral, luego el puente lo lleva a mi propuesta. Eso es todo.`;
 
       const genMsg = await client(settings.anthropicKey).messages.create({
         model,

@@ -358,21 +358,12 @@ function ScriptCard({ s }: { s: CompetitorScriptItem }) {
         {s.viral_score !== null && <span>🔥 {s.viral_score}/100</span>}
       </div>
 
-      {s.original_hook && (
-        <p className="mb-2 rounded bg-zinc-800/60 px-3 py-1.5 text-xs text-zinc-400">
-          <span className="text-zinc-500">Original hook:</span> {s.original_hook}
-        </p>
-      )}
-
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="rounded bg-brand2/20 px-1.5 py-0.5 text-xs font-semibold text-brand2">
-              {s.format === "reel" ? "📱 Reel" : "▶️ YouTube"}
-            </span>
-            <span className="font-medium text-white">{s.title}</span>
-          </div>
-          {s.hook && <p className="mt-2 text-sm font-medium text-zinc-200">{s.hook}</p>}
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="rounded bg-brand2/20 px-1.5 py-0.5 text-xs font-semibold text-brand2">
+            {s.format === "reel" ? "📱 Reel" : "▶️ YouTube"}
+          </span>
+          <span className="font-medium text-white">{s.title}</span>
         </div>
         <select value={status} onChange={(e) => changeStatus(e.target.value)}
           className="shrink-0 rounded border border-edge bg-ink px-2 py-1 text-xs text-zinc-300">
@@ -382,22 +373,40 @@ function ScriptCard({ s }: { s: CompetitorScriptItem }) {
         </select>
       </div>
 
+      {/* Hook idéntico al original */}
+      {s.hook && (
+        <div className="rounded-lg border border-amber-700/50 bg-amber-950/25 p-3 mb-2">
+          <p className="mb-1 text-xs font-semibold text-amber-500 uppercase tracking-wide">
+            🔥 Hook — idéntico al viral (primeros ~10s)
+          </p>
+          <p className="text-sm font-medium text-amber-100 leading-relaxed">{s.hook}</p>
+        </div>
+      )}
+
+      {/* Puente */}
+      {s.puente && (
+        <div className="rounded-lg border border-emerald-800/50 bg-emerald-950/20 p-3 mb-2">
+          <p className="mb-1 text-xs font-semibold text-emerald-500 uppercase tracking-wide">
+            🔗 Puente — transición a tu marca
+          </p>
+          <p className="text-sm text-emerald-100 leading-relaxed">{s.puente}</p>
+        </div>
+      )}
+
       {s.adaptation_notes && (
-        <p className="mt-2 rounded bg-amber-950/30 px-3 py-1.5 text-xs text-amber-300">
-          <span className="text-amber-500">💡 Adaptación:</span> {s.adaptation_notes}
-        </p>
+        <p className="mb-2 text-xs text-zinc-500 italic">{s.adaptation_notes}</p>
       )}
 
       <button onClick={() => setExpanded(!expanded)}
-        className="mt-3 text-xs text-zinc-500 hover:text-zinc-300">
-        {expanded ? "▲ Ocultar guion" : "▼ Ver guion completo"}
+        className="text-xs text-zinc-500 hover:text-zinc-300">
+        {expanded ? "▲ Ocultar guion completo" : "▼ Ver guion completo (body + CTA)"}
       </button>
 
       {expanded && (
         <div className="mt-3 space-y-3 rounded border border-edge/60 bg-ink p-4">
           {s.body && (
             <div>
-              <p className="mb-1 text-xs font-semibold uppercase text-zinc-500">Guion</p>
+              <p className="mb-1 text-xs font-semibold uppercase text-zinc-500">📝 Body — tu contenido</p>
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">{s.body}</p>
             </div>
           )}
@@ -405,6 +414,11 @@ function ScriptCard({ s }: { s: CompetitorScriptItem }) {
             <div>
               <p className="mb-1 text-xs font-semibold uppercase text-zinc-500">CTA</p>
               <p className="text-sm text-zinc-300">{s.cta}</p>
+            </div>
+          )}
+          {s.original_hook && (
+            <div className="border-t border-edge/40 pt-2">
+              <p className="text-xs text-zinc-600">Análisis hook original: {s.original_hook}</p>
             </div>
           )}
         </div>

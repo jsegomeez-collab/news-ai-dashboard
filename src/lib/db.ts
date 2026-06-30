@@ -330,5 +330,12 @@ CREATE INDEX IF NOT EXISTS idx_comp_scripts_video ON competitor_scripts(video_id
     r.exec(`ALTER TABLE competitor_videos ADD COLUMN media_url TEXT`);
     console.log("[db] columna media_url añadida a competitor_videos");
   }
+
+  // puente: transición del hook literal al vehículo único del creador.
+  const scols = r.prepare(`PRAGMA table_info(competitor_scripts)`).all() as { name: string }[];
+  if (!scols.some((c) => c.name === "puente")) {
+    r.exec(`ALTER TABLE competitor_scripts ADD COLUMN puente TEXT`);
+    console.log("[db] columna puente añadida a competitor_scripts");
+  }
 }
 
