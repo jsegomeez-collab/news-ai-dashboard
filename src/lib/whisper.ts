@@ -55,6 +55,47 @@ async function downloadInstagramMedia(pv: PendingVideo, apifyToken: string, outP
 
 export type TranscribeResult = { processed: number; errors: number; noKey: number };
 
+// Transcribe un único video (para el botón manual en la UI).
+export async function transcribeOneVideo(
+  pv: PendingVideo,
+  userId: number
+): Promise<{ ok: boolean; error?: string }> {
+  const settings = readUserSettings(userId);
+  if (!settings.openaiKey.startsWith("sk-")) {
+    return { ok: false, error: "Configura tu clave de OpenAI en Ajustes para transcribir." };
+  }
+
+  const isInstagram = pv.platform === "instagram";
+  const mediaPath = join(tmpdir(), `comp-${pv.id}-${Date.now()}.${isInstagram ? "mp4" : "mp3"}`);
+  setVideoStatus(pv.id, "transcribing");
+
+  try {
+    if (isInstagram) {
+      await downloadInstagramMedia(pv, settings.apifyToken, mediaPath);
+    } else {
+      const hasYtdlp = await ytdlpAvailable();
+      if (!hasYtdlp) throw new Error("yt-dlp no instalado (necesario para YouTube/TikTok)");
+      await downloadAudio(pv.video_url, mediaPath);
+    }
+    if (!existsSync(mediaPath)) throw new Error("no se generó el archivo de audio/video");
+
+    const text = await transcribeFile(settings.openaiKey, mediaPath);
+    if (!text) throw new Error("Whisper devolvió transcripción vacía");
+
+    saveTranscript(pv.id, text, "auto", "whisper-1");
+    setVideoStatus(pv.id, "analysing");
+    console.log(`[whisper] video ${pv.id} (${pv.platform}): ${text.length} chars transcritos`);
+    return { ok: true };
+  } catch (e) {
+    const msg = (e as Error).message.slice(0, 500);
+    console.warn(`[whisper] video ${pv.id} falló:`, msg);
+    setVideoStatus(pv.id, "error", msg);
+    return { ok: false, error: msg };
+  } finally {
+    try { if (existsSync(mediaPath)) rmSync(mediaPath); } catch { /* noop */ }
+  }
+}
+
 // Procesa los videos pendientes de transcripción (máx. `limit` por ciclo para no bloquear el worker).
 export async function transcribePendingVideos(limit = 5): Promise<TranscribeResult> {
   const pending = pendingVideosWithUser(limit);

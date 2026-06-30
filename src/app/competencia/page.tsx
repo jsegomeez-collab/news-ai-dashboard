@@ -232,7 +232,12 @@ function AccountCard({ account, onChanged }: { account: CompetitorAccount; onCha
 
 // ─── VideoCard ────────────────────────────────────────────────────────────────
 
-function VideoCard({ video, onAnalyze }: { video: CompetitorVideo; onAnalyze: (id: number) => void }) {
+function VideoCard({ video, onAnalyze, onTranscribe, transcribing }: {
+  video: CompetitorVideo;
+  onAnalyze: (id: number) => void;
+  onTranscribe: (id: number) => void;
+  transcribing: number | null;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -304,8 +309,14 @@ function VideoCard({ video, onAnalyze }: { video: CompetitorVideo; onAnalyze: (i
                 ✍️ Generar guion adaptado
               </button>
             )}
-            {video.status === "pending" && (
-              <span className="text-xs text-zinc-600">Pendiente de transcripción (requiere Fase 2)</span>
+            {(video.status === "pending" || video.status === "error") && (
+              <button
+                onClick={() => onTranscribe(video.id)}
+                disabled={transcribing === video.id}
+                className="rounded bg-zinc-700 px-3 py-1 text-xs font-semibold text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
+              >
+                {transcribing === video.id ? "Transcribiendo…" : "🎙 Transcribir ahora"}
+              </button>
             )}
           </div>
 
@@ -411,6 +422,7 @@ export default function CompetenciaPage() {
   const [accountFilter, setAccountFilter] = useState<number | undefined>(undefined);
   const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [analyzeMsg, setAnalyzeMsg] = useState("");
+  const [transcribing, setTranscribing] = useState<number | null>(null);
   const [polling, setPolling] = useState(false);
   const [pollMsg, setPollMsg] = useState("");
 
@@ -432,6 +444,16 @@ export default function CompetenciaPage() {
       setPollMsg(json.message ?? (json.ok ? "Hecho" : "Error"));
       if (json.inserted && json.inserted > 0) { refreshVideos(); }
     } finally { setPolling(false); }
+  }, [refreshVideos]);
+
+  const handleTranscribe = useCallback(async (videoId: number) => {
+    setTranscribing(videoId); setAnalyzeMsg("");
+    try {
+      const res = await fetch(`/api/competitors/videos/${videoId}/transcribe`, { method: "POST" });
+      const json = await res.json() as { ok?: boolean; error?: string };
+      if (json.ok) { setAnalyzeMsg("✓ Transcripción completada"); refreshVideos(); }
+      else setAnalyzeMsg(json.error ?? "Error al transcribir");
+    } finally { setTranscribing(null); }
   }, [refreshVideos]);
 
   const handleAnalyze = useCallback(async (videoId: number) => {
@@ -565,7 +587,9 @@ export default function CompetenciaPage() {
             <div className="space-y-3">
               {videos.map((v) => (
                 <VideoCard key={v.id} video={v}
-                  onAnalyze={(id) => { setTab("guiones"); handleAnalyze(id); }} />
+                  onAnalyze={(id) => { setTab("guiones"); handleAnalyze(id); }}
+                  onTranscribe={handleTranscribe}
+                  transcribing={transcribing} />
               ))}
             </div>
           )}
