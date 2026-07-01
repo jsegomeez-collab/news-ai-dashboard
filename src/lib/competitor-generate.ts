@@ -44,7 +44,7 @@ const ADAPTED_SCHEMA = {
   type: "object",
   properties: {
     title:            { type: "string", description: "Título interno del guion (corto, para identificarlo)." },
-    hook:             { type: "string", description: "COPIA LITERAL, PALABRA POR PALABRA, de los primeros ~10 segundos del video original. Extráelo de las primeras líneas de la transcripción. NO cambies ni una sola palabra. Este es el patrón que lo viralizó y debe permanecer intacto." },
+    hook:             { type: "string", description: "Los primeros ~10 segundos del video original, siempre en ESPAÑOL. Si el original es en español: copia LITERAL. Si es en inglés u otro idioma: traducción DIRECTA y FIEL (mismo ritmo, misma cadencia, misma fuerza emocional — solo cambia el idioma, nada más). Nunca adaptes ni parafrasees." },
     puente:           { type: "string", description: "1-3 frases de transición que conectan el hook original (idéntico) con el vehículo único del creador. Debe sonar natural: el oyente pasa del hook viral a la propuesta de la marca sin notar el corte. Usa la voz y tonalidad del creador." },
     body:             { type: "string", description: "Cuerpo del guion a partir del puente: 100% la marca del creador, su oferta, su audiencia, su tonalidad. Mantén la estructura rítmica del original (mismo número de beats, misma cadencia) pero con el contenido propio." },
     cta:              { type: "string", description: "CTA alineado con la oferta del creador." },
@@ -67,13 +67,17 @@ const ADAPTED_PERSONA =
   "Eres el Head of Content de una marca personal de IA aplicada a negocios digitales. " +
   "Te han dado la transcripción de un reel viral de la competencia y el análisis de por qué funciona.\n\n" +
   "REGLA ABSOLUTA — EL HOOK ES SAGRADO:\n" +
-  "Los primeros ~10 segundos del guion son IDÉNTICOS al original, palabra por palabra. " +
-  "El campo 'hook' en tu respuesta debe ser una copia EXACTA de las primeras líneas de la transcripción. " +
-  "No parafrasees, no mejores, no adaptes — COPIA LITERAL. " +
-  "Este es el patrón viral y no se toca. El oyente escucha exactamente lo mismo que en el video que ya se viralizó.\n\n" +
+  "Los primeros ~10 segundos del guion replican el original con precisión quirúrgica. " +
+  "El campo 'hook' debe ser una traducción/transcripción FIEL de las primeras líneas:\n" +
+  "  - Si el original está en ESPAÑOL: copia LITERAL, palabra por palabra. Cero cambios.\n" +
+  "  - Si el original está en INGLÉS u otro idioma: tradúcelo al español de forma DIRECTA y LITERAL, " +
+  "    conservando exactamente el mismo ritmo, cadencia, estructura de frase y fuerza emocional. " +
+  "    No adaptes, no mejores, no parafrasees — solo traduce preservando la fórmula. " +
+  "    Una traducción literal que suene igual de potente, no una versión creativa.\n" +
+  "Este hook es el patrón que lo viralizó. La única transformación permitida es de idioma, nunca de estructura ni contenido.\n\n" +
   "Lo que SÍ adaptas: el 'puente' (transición hook→marca) y el 'body' (contenido de la marca). " +
   "El resultado final debe sonar 100% a la marca del creador desde el puente en adelante, " +
-  "pero los primeros 10 segundos son el gancho original sin cambiar nada. " +
+  "pero el hook respeta la fórmula original. " +
   "Devuelve SOLO JSON válido.";
 
 function formatBrief(format: "reel" | "youtube"): string {
