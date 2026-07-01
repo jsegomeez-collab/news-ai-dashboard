@@ -70,7 +70,7 @@ function pendingArticles(userId: number, limit = 60): ArticleRow[] {
     .all(userId, limit) as ArticleRow[];
 }
 
-function saveClassification(userId: number, articleId: number, r: ClassResult, model: string): void {
+function saveClassification(userId: number, articleId: number, articleTitle: string, r: ClassResult, model: string): void {
   db.prepare(
     `INSERT INTO classifications(user_id, article_id, relevance, category, business_angle, actuality_link, model, created_at)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?)
@@ -90,11 +90,52 @@ function saveClassification(userId: number, articleId: number, r: ClassResult, m
   );
 
   const threshold = readUserSettings(userId).genRelevanceThreshold;
-  if (r.relevance >= threshold) {
+  if (r.relevance >= threshold && !isDuplicateStory(userId, articleTitle)) {
     db.prepare(
       `INSERT OR IGNORE INTO gen_queue(user_id, article_id, enqueued_at, done) VALUES(?, ?, ?, 0)`
     ).run(userId, articleId, new Date().toISOString());
   }
+}
+
+// Comprueba si ya hay un artículo del mismo story en cola o un guion generado hoy.
+// Usa Jaccard sobre palabras clave (>3 chars, sin stopwords) del titular.
+// Umbral 0.4 → captura "Claude Sonnet 5 lanzado" y "Anthropic lanza Claude Sonnet 5"
+// sin bloquear historias distintas con palabras comunes como "inteligencia artificial".
+const STOPWORDS = new Set([
+  "para","como","este","esta","esto","estos","estas","cuando","donde","quien",
+  "porque","aunque","desde","hasta","entre","sobre","también","pero","sino",
+  "the","and","for","with","that","this","from","have","will","been","were",
+  "they","their","what","which","into","more","than","also","after","about",
+]);
+
+function storyKeywords(title: string): Set<string> {
+  return new Set(
+    title.toLowerCase().split(/\W+/).filter((w) => w.length > 3 && !STOPWORDS.has(w))
+  );
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  let inter = 0;
+  for (const w of a) if (b.has(w)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+function isDuplicateStory(userId: number, title: string): boolean {
+  const kw = storyKeywords(title);
+  if (kw.size < 2) return false; // titular demasiado corto para comparar
+
+  const recent = db.prepare(`
+    SELECT a.title FROM articles a
+    JOIN gen_queue gq ON gq.article_id = a.id
+    WHERE gq.user_id = ? AND gq.done = 0
+    UNION
+    SELECT a.title FROM articles a
+    JOIN scripts s ON s.article_id = a.id
+    WHERE s.user_id = ? AND s.created_at >= datetime('now', '-20 hours')
+  `).all(userId, userId) as { title: string }[];
+
+  return recent.some((r) => jaccard(kw, storyKeywords(r.title)) >= 0.4);
 }
 
 async function classifyArticle(userId: number, apiKey: string, a: ArticleRow): Promise<boolean> {
@@ -109,7 +150,7 @@ async function classifyArticle(userId: number, apiKey: string, a: ArticleRow): P
     recordUsage(userId, env.modelClassify, (msg as never as { usage: never }).usage);
     const parsed = parseJsonFromText<ClassResult>(firstText(msg as never));
     if (parsed) {
-      saveClassification(userId, a.id, parsed, env.modelClassify);
+      saveClassification(userId, a.id, a.title, parsed, env.modelClassify);
       return true;
     }
   } catch (e) {
@@ -195,7 +236,8 @@ export async function pollClassifyBatches(userId: number): Promise<number> {
         const text = msg.content.find((b) => b.type === "text")?.text ?? "";
         const parsed = parseJsonFromText<ClassResult>(text);
         if (parsed) {
-          saveClassification(userId, articleId, parsed, env.modelClassify);
+          const art = db.prepare(`SELECT title FROM articles WHERE id = ?`).get(articleId) as { title: string } | undefined;
+          saveClassification(userId, articleId, art?.title ?? "", parsed, env.modelClassify);
           processed++;
         }
       }
