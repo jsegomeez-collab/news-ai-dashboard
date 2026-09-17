@@ -309,6 +309,19 @@ CREATE TABLE IF NOT EXISTS competitor_scripts (
 );
 CREATE INDEX IF NOT EXISTS idx_comp_scripts_user  ON competitor_scripts(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comp_scripts_video ON competitor_scripts(video_id);
+
+-- Fila única: último latido del worker de fondo. Si esto deja de actualizarse,
+-- el worker está muerto aunque la web siga respondiendo con normalidad.
+CREATE TABLE IF NOT EXISTS worker_heartbeat (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  last_run_at TEXT NOT NULL,
+  last_ok     INTEGER NOT NULL,
+  last_error  TEXT,
+  fetched     INTEGER NOT NULL DEFAULT 0,
+  inserted    INTEGER NOT NULL DEFAULT 0,
+  classified  INTEGER NOT NULL DEFAULT 0,
+  generated   INTEGER NOT NULL DEFAULT 0
+);
 `);
 
   // Columnas añadidas en versiones posteriores. Usamos PRAGMA para no depender

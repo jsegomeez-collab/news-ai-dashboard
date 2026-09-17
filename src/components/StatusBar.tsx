@@ -1,19 +1,46 @@
 "use client";
-import { usePoll } from "@/components/usePoll";
+import { usePoll, timeAgo } from "@/components/usePoll";
+
+type Worker = { lastRunAt: string; lastOk: boolean; lastError: string | null } | null;
 
 type Status = {
   hasKey: boolean;
   db?: { persistent: boolean; path: string };
+  worker?: Worker;
   budget: { scriptsToday: number; costToday: number; maxScripts: number; maxUsd: number; canGenerate: boolean };
   stats: { articles: number; classified: number; scripts: number; queuePending: number };
   knowledge: { hasBases: boolean };
   window: { active: boolean; intervalHours: number };
 };
 
-function Pill({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "good" | "warn" | "bad" }) {
+// Umbral heurístico: el cron por defecto corre cada 2h (POLL_CRON), así que más
+// de 2 ciclos de margen sin noticias de vida ya es motivo de aviso.
+const WORKER_WARN_MIN = 3 * 60;
+const WORKER_BAD_MIN = 6 * 60;
+
+function workerPill(w: Worker): { value: string; tone: "default" | "good" | "warn" | "bad"; title?: string } {
+  if (!w) return { value: "nunca ha corrido", tone: "bad" };
+  const minutesAgo = Math.floor((Date.now() - new Date(w.lastRunAt).getTime()) / 60000);
+  if (!w.lastOk) return { value: `falló ${timeAgo(w.lastRunAt)}`, tone: "bad", title: w.lastError ?? undefined };
+  if (minutesAgo >= WORKER_BAD_MIN) return { value: `parado, ${timeAgo(w.lastRunAt)}`, tone: "bad" };
+  if (minutesAgo >= WORKER_WARN_MIN) return { value: timeAgo(w.lastRunAt), tone: "warn" };
+  return { value: timeAgo(w.lastRunAt), tone: "good" };
+}
+
+function Pill({
+  label,
+  value,
+  tone = "default",
+  title,
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "good" | "warn" | "bad";
+  title?: string;
+}) {
   const colors = { default: "text-zinc-300", good: "text-emerald-400", warn: "text-amber-400", bad: "text-red-400" };
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5" title={title}>
       <span className="text-zinc-500">{label}</span>
       <span className={`font-semibold ${colors[tone]}`}>{value}</span>
     </div>
@@ -34,6 +61,7 @@ export function StatusBar() {
         </div>
       )}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-edge bg-panel px-4 py-2 text-xs">
+      <Pill label="Worker" {...workerPill(data.worker ?? null)} />
       <Pill label="Clave Anthropic" value={data.hasKey ? "conectada" : "falta"} tone={data.hasKey ? "good" : "bad"} />
       <Pill label="Guiones hoy" value={`${b.scriptsToday}/${b.maxScripts}`} tone={b.canGenerate ? "default" : "warn"} />
       <Pill label="Gasto hoy" value={`$${b.costToday.toFixed(2)}/$${b.maxUsd.toFixed(0)}`} tone={b.canGenerate ? "default" : "warn"} />

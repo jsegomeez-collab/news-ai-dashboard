@@ -5,6 +5,7 @@ import { getBrandDocs } from "@/lib/brand";
 import { readUserSettings, withinGenerationWindow } from "@/lib/settings";
 import { getUser } from "@/lib/auth";
 import { dbInfo } from "@/lib/db";
+import { readHeartbeat } from "@/lib/heartbeat";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export function GET(req: NextRequest) {
     user,
     hasKey: s.anthropicKey.startsWith("sk-ant-"),
     db: dbInfo(),
+    worker: readHeartbeat(),
     budget: budgetState(user.id),
     stats: stats(user.id),
     knowledge: { hasBases, hasTono: !!(docs["tonalidad"] ?? "").trim() },

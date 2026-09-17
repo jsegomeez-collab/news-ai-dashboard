@@ -8,6 +8,7 @@ import { readUserSettings, withinGenerationWindow } from "./settings";
 import { pollCompetitorAccounts, type CompetitorPollResult } from "./competitor-pipeline";
 import { transcribePendingVideos, type TranscribeResult } from "./whisper";
 import { processAnalysingVideos } from "./competitor-generate";
+import { recordHeartbeat } from "./heartbeat";
 
 // Usuarios que tienen una clave de Anthropic configurada.
 export function activeUserIds(): number[] {
@@ -151,8 +152,18 @@ export async function runCycle(): Promise<CycleSummary> {
         console.warn(`[cycle] u${userId}:`, (e as Error).message);
       }
     }
+    recordHeartbeat({ ok: true, fetched: base.fetched, inserted: base.inserted, classified: base.classified, generated: base.generated });
     return base;
   } catch (e) {
-    return { ...base, ok: false, error: (e as Error).message };
+    const failed = { ...base, ok: false, error: (e as Error).message };
+    recordHeartbeat({
+      ok: false,
+      error: failed.error,
+      fetched: failed.fetched,
+      inserted: failed.inserted,
+      classified: failed.classified,
+      generated: failed.generated,
+    });
+    return failed;
   }
 }
