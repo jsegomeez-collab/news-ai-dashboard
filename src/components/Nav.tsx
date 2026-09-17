@@ -6,6 +6,7 @@ const baseTabs = [
   { href: "/", label: "📰 Noticias en vivo" },
   { href: "/guiones", label: "🎬 Guiones" },
   { href: "/competencia", label: "🕵️ Competencia" },
+  { href: "/adaptados", label: "🗂️ Adaptados" },
   { href: "/marca", label: "🧠 Marca" },
   { href: "/ajustes", label: "⚙️ Ajustes" },
 ];

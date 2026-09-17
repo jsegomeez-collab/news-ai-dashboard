@@ -8,6 +8,7 @@ import {
   STATUS_COLOR,
   type ScriptStatus,
 } from "@/lib/status";
+import { buildScriptText } from "@/lib/scriptText";
 
 function scoreColor(s: number | null): string {
   if (s === null) return "bg-zinc-700 text-zinc-300";
@@ -152,18 +153,12 @@ function ScriptCard({ s, onChange }: { s: ScriptItem; onChange: () => void }) {
 
       {open && (
         <div className="mt-3 space-y-3 border-t border-edge pt-3">
-          <div>
-            <div className="text-xs uppercase text-zinc-500">Gancho</div>
-            <p className="text-sm text-zinc-200">{s.hook}</p>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-zinc-500">Cuerpo</div>
-            <p className="whitespace-pre-wrap text-sm text-zinc-200">{s.body}</p>
-          </div>
-          <div>
-            <div className="text-xs uppercase text-zinc-500">CTA</div>
-            <p className="text-sm text-zinc-200">{s.cta}</p>
-          </div>
+          {/* El guion como UN bloque de texto corrido (gancho→cuerpo→CTA), no
+              como campos sueltos con etiquetas — así se lee como el guion que
+              vas a grabar, no como un formulario. */}
+          <p className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200">
+            {buildScriptText({ hook: s.hook, body: s.body, cta: s.cta })}
+          </p>
           {(s.strengths || s.weaknesses || s.improvements) && (
             <div className="rounded bg-ink/60 p-3 text-sm">
               <div className="text-xs uppercase text-zinc-500">

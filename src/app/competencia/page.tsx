@@ -1,7 +1,8 @@
 "use client";
 import { useState, useCallback } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
-import type { CompetitorAccount, CompetitorVideo, CompetitorScriptItem } from "@/lib/competitor";
+import type { CompetitorAccount, CompetitorVideo } from "@/lib/competitor";
+import { PLATFORM_ICON, fmt } from "@/lib/competitorUi";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -10,8 +11,6 @@ const PLATFORMS: { id: string; label: string; placeholder: string; urlHint: stri
   { id: "instagram", label: "Instagram", placeholder: "@creador",   urlHint: "https://www.instagram.com/usuario/" },
   { id: "youtube",   label: "YouTube",   placeholder: "@canal",     urlHint: "https://www.youtube.com/@canal" },
 ];
-
-const PLATFORM_ICON: Record<string, string> = { tiktok: "🎵", instagram: "📸", youtube: "▶️" };
 
 const STATUS_LABEL: Record<string, string> = {
   pending:      "Pendiente",
@@ -29,23 +28,6 @@ const STATUS_COLOR: Record<string, string> = {
   error:        "bg-red-700 text-red-100",
   skipped:      "bg-zinc-700 text-zinc-400",
 };
-
-const SCRIPT_STATUS_LABEL: Record<string, string> = {
-  borrador:     "Borrador",
-  aprobado:     "Aprobado",
-  pend_grabar:  "Pend. grabar",
-  pend_edicion: "Pend. edición",
-  pend_subida:  "Pend. subida",
-  subido:       "Subido",
-  descartado:   "Descartado",
-};
-
-function fmt(n: number | null): string {
-  if (n === null) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-  return String(n);
-}
 
 // ─── AddAccountForm ───────────────────────────────────────────────────────────
 
@@ -349,105 +331,10 @@ function VideoCard({ video, selected, onToggleSelect, onDelete, deleting, onAnal
   );
 }
 
-// ─── ScriptCard ───────────────────────────────────────────────────────────────
-
-function ScriptCard({ s }: { s: CompetitorScriptItem }) {
-  const [expanded, setExpanded] = useState(false);
-  const [status, setStatus] = useState(s.status);
-
-  async function changeStatus(st: string) {
-    setStatus(st);
-    await fetch(`/api/competitors/scripts/${s.id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: st }),
-    });
-  }
-
-  return (
-    <article className="rounded-lg border border-edge bg-panel p-4">
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-        <span>{PLATFORM_ICON[s.account_platform]} @{s.account_handle}</span>
-        <span>·</span>
-        <a href={s.video_url} target="_blank" rel="noreferrer" className="hover:text-brand line-clamp-1 max-w-xs">
-          {s.video_title ?? s.video_url}
-        </a>
-        {s.views !== null && <span className="ml-auto">👁 {fmt(s.views)}</span>}
-        {s.comments !== null && <span>💬 {fmt(s.comments)}</span>}
-        {s.viral_score !== null && <span>🔥 {s.viral_score}/100</span>}
-      </div>
-
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2">
-          <span className="rounded bg-brand2/20 px-1.5 py-0.5 text-xs font-semibold text-brand2">
-            {s.format === "reel" ? "📱 Reel" : "▶️ YouTube"}
-          </span>
-          <span className="font-medium text-white">{s.title}</span>
-        </div>
-        <select value={status} onChange={(e) => changeStatus(e.target.value)}
-          className="shrink-0 rounded border border-edge bg-ink px-2 py-1 text-xs text-zinc-300">
-          {Object.entries(SCRIPT_STATUS_LABEL).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Hook idéntico al original */}
-      {s.hook && (
-        <div className="rounded-lg border border-amber-700/50 bg-amber-950/25 p-3 mb-2">
-          <p className="mb-1 text-xs font-semibold text-amber-500 uppercase tracking-wide">
-            🔥 Hook — idéntico al viral (primeros ~10s)
-          </p>
-          <p className="text-sm font-medium text-amber-100 leading-relaxed">{s.hook}</p>
-        </div>
-      )}
-
-      {/* Puente */}
-      {s.puente && (
-        <div className="rounded-lg border border-emerald-800/50 bg-emerald-950/20 p-3 mb-2">
-          <p className="mb-1 text-xs font-semibold text-emerald-500 uppercase tracking-wide">
-            🔗 Puente — transición a tu marca
-          </p>
-          <p className="text-sm text-emerald-100 leading-relaxed">{s.puente}</p>
-        </div>
-      )}
-
-      {s.adaptation_notes && (
-        <p className="mb-2 text-xs text-zinc-500 italic">{s.adaptation_notes}</p>
-      )}
-
-      <button onClick={() => setExpanded(!expanded)}
-        className="text-xs text-zinc-500 hover:text-zinc-300">
-        {expanded ? "▲ Ocultar guion completo" : "▼ Ver guion completo (body + CTA)"}
-      </button>
-
-      {expanded && (
-        <div className="mt-3 space-y-3 rounded border border-edge/60 bg-ink p-4">
-          {s.body && (
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase text-zinc-500">📝 Body — tu contenido</p>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">{s.body}</p>
-            </div>
-          )}
-          {s.cta && (
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase text-zinc-500">CTA</p>
-              <p className="text-sm text-zinc-300">{s.cta}</p>
-            </div>
-          )}
-          {s.original_hook && (
-            <div className="border-t border-edge/40 pt-2">
-              <p className="text-xs text-zinc-600">Análisis hook original: {s.original_hook}</p>
-            </div>
-          )}
-        </div>
-      )}
-    </article>
-  );
-}
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-type Tab = "cuentas" | "videos" | "guiones";
+type Tab = "cuentas" | "videos";
 
 const VIDEOS_PAGE_SIZE = 20;
 
@@ -608,7 +495,7 @@ export default function CompetenciaPage() {
     try {
       const res = await fetch(`/api/competitors/videos/${videoId}/adapt`, { method: "POST" });
       const json = await res.json() as { ok?: boolean; generated?: number; error?: string };
-      if (json.ok) { setAnalyzeMsg(`✓ ${json.generated} guion(es) generados`); refreshVideos(); }
+      if (json.ok) { setAnalyzeMsg(`✓ ${json.generated} guion(es) generados — revísalos en 🗂️ Adaptados`); refreshVideos(); }
       else setAnalyzeMsg(json.error ?? "Error al generar");
     } finally { setAnalyzing(null); }
   }, [refreshVideos]);
@@ -634,9 +521,6 @@ export default function CompetenciaPage() {
         </button>
         <button onClick={() => setTab("videos")} className={tabClass("videos")}>
           📹 Videos ({videosTotal})
-        </button>
-        <button onClick={() => setTab("guiones")} className={tabClass("guiones")}>
-          ✍️ Guiones adaptados
         </button>
       </div>
 
@@ -796,7 +680,7 @@ export default function CompetenciaPage() {
                   onToggleSelect={toggleSelect}
                   onDelete={handleDeleteOne}
                   deleting={deletingId}
-                  onAnalyze={(id) => { setTab("guiones"); handleAnalyze(id); }}
+                  onAnalyze={handleAnalyze}
                   onTranscribe={handleTranscribe}
                   transcribing={transcribing} />
               ))}
@@ -827,39 +711,6 @@ export default function CompetenciaPage() {
         </div>
       )}
 
-      {/* ── GUIONES ADAPTADOS ── */}
-      {tab === "guiones" && (
-        <GuionesTab userId={undefined} />
-      )}
-    </div>
-  );
-}
-
-// ─── GuionesTab (separated to allow future refresh) ──────────────────────────
-
-function GuionesTab({ userId: _userId }: { userId: undefined }) {
-  const { data } = usePoll<{ scripts: CompetitorScriptItem[] }>(
-    "/api/competitors/scripts", 20000
-  );
-  const scripts = data?.scripts ?? [];
-
-  if (scripts.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-edge p-8 text-center text-zinc-500">
-        <p className="text-2xl mb-2">✍️</p>
-        <p className="text-sm">Aún no hay guiones adaptados.</p>
-        <p className="mt-1 text-xs text-zinc-600">
-          Ve a la pestaña Videos, localiza un video analizado y pulsa "Generar guion adaptado".
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {scripts.map((s) => (
-        <ScriptCard key={s.id} s={s} />
-      ))}
     </div>
   );
 }

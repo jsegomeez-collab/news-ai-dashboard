@@ -373,7 +373,40 @@ export function saveAdaptedScript(
 
 // ─── Adapted scripts ──────────────────────────────────────────────────────────
 
-export function listAdaptedScripts(userId: number, limit = 100): CompetitorScriptItem[] {
+export type AdaptedScriptSort = "recent" | "views" | "likes" | "comments" | "viral";
+
+const ADAPTED_SORT_SQL: Record<AdaptedScriptSort, string> = {
+  recent: "cs.created_at DESC",
+  views: "COALESCE(cv.views, 0) DESC, cs.created_at DESC",
+  likes: "COALESCE(cv.likes, 0) DESC, cs.created_at DESC",
+  comments: "COALESCE(cv.comments, 0) DESC, cs.created_at DESC",
+  viral: "COALESCE(an.viral_score, 0) DESC, cs.created_at DESC",
+};
+
+type AdaptedScriptFilters = {
+  accountId?: number;
+  format?: string;
+  status?: string;
+  sort?: AdaptedScriptSort;
+};
+
+function adaptedScriptWhere(userId: number, f: AdaptedScriptFilters): { clause: string; params: unknown[] } {
+  const wheres = ["cs.user_id = ?"];
+  const params: unknown[] = [userId];
+  if (f.accountId !== undefined) { wheres.push("ca.id = ?"); params.push(f.accountId); }
+  if (f.format) { wheres.push("cs.format = ?"); params.push(f.format); }
+  if (f.status) { wheres.push("cs.status = ?"); params.push(f.status); }
+  return { clause: wheres.join(" AND "), params };
+}
+
+export function listAdaptedScripts(
+  userId: number,
+  opts: AdaptedScriptFilters & { limit?: number; offset?: number } = {}
+): CompetitorScriptItem[] {
+  const limit = opts.limit ?? 100;
+  const offset = opts.offset ?? 0;
+  const { clause, params } = adaptedScriptWhere(userId, opts);
+  const orderBy = ADAPTED_SORT_SQL[opts.sort ?? "recent"];
   return db
     .prepare(
       `SELECT cs.id, cs.video_id, cs.user_id, cs.format, cs.title, cs.hook, cs.puente, cs.body, cs.cta, cs.adaptation_notes, cs.status, cs.model, cs.created_at,
@@ -384,11 +417,25 @@ export function listAdaptedScripts(userId: number, limit = 100): CompetitorScrip
        JOIN competitor_videos cv ON cv.id = cs.video_id
        JOIN competitor_accounts ca ON ca.id = cv.account_id
        LEFT JOIN competitor_analyses an ON an.video_id = cv.id
-       WHERE cs.user_id = ?
-       ORDER BY cs.created_at DESC
-       LIMIT ?`
+       WHERE ${clause}
+       ORDER BY ${orderBy}
+       LIMIT ? OFFSET ?`
     )
-    .all(userId, limit) as CompetitorScriptItem[];
+    .all(...(params as never[]), limit, offset) as CompetitorScriptItem[];
+}
+
+export function countAdaptedScripts(userId: number, opts: AdaptedScriptFilters = {}): number {
+  const { clause, params } = adaptedScriptWhere(userId, opts);
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) as n FROM competitor_scripts cs
+         JOIN competitor_videos cv ON cv.id = cs.video_id
+         JOIN competitor_accounts ca ON ca.id = cv.account_id
+         WHERE ${clause}`
+      )
+      .get(...(params as never[])) as { n: number }
+  ).n;
 }
 
 export function updateCompetitorScriptStatus(userId: number, scriptId: number, status: string): void {
