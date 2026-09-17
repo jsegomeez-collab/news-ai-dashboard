@@ -356,6 +356,21 @@ CREATE TABLE IF NOT EXISTS worker_heartbeat (
     console.log("[db] columna puente añadida a competitor_scripts");
   }
 
+  // Audio/video que el usuario sube de sí mismo leyendo el guion, para que
+  // el editor lo use como referencia/clonación con IA.
+  for (const [col, def] of [
+    ["media_path", "TEXT"],
+    ["media_original_name", "TEXT"],
+    ["media_mime", "TEXT"],
+    ["media_size", "INTEGER"],
+    ["media_uploaded_at", "TEXT"],
+  ] as const) {
+    if (!scols.some((c) => c.name === col)) {
+      r.exec(`ALTER TABLE competitor_scripts ADD COLUMN ${col} ${def}`);
+      console.log(`[db] columna ${col} añadida a competitor_scripts`);
+    }
+  }
+
   // Columnas de salud del pipeline de competencia en el heartbeat: sin esto,
   // el heartbeat solo veía noticias/clasificación/guiones, y un fallo total
   // del descubrimiento/transcripción de competencia (Apify caído, yt-dlp

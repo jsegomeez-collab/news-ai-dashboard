@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { deleteUploadIfExists } from "./uploads";
 
 export type CompetitorAccount = {
   id: number;
@@ -64,9 +65,16 @@ export type CompetitorScriptItem = {
   status: string;
   model: string | null;
   created_at: string;
+  // audio/video subido por el usuario (su voz leyendo el guion, para el editor)
+  media_path: string | null;
+  media_original_name: string | null;
+  media_mime: string | null;
+  media_size: number | null;
+  media_uploaded_at: string | null;
   // joined
   video_url: string;
   video_title: string | null;
+  thumbnail_url: string | null;
   views: number | null;
   likes: number | null;
   comments: number | null;
@@ -156,7 +164,19 @@ export function updateAccount(
 }
 
 export function deleteAccount(userId: number, accountId: number): void {
+  // ON DELETE CASCADE se lleva por delante videos/transcripts/análisis/guiones,
+  // pero NO los archivos de audio/video que el usuario subió a disco para esos
+  // guiones — hay que borrarlos a mano o quedan huérfanos para siempre.
+  const mediaPaths = db
+    .prepare(
+      `SELECT cs.media_path FROM competitor_scripts cs
+       JOIN competitor_videos cv ON cv.id = cs.video_id
+       WHERE cv.account_id = ? AND cs.user_id = ? AND cs.media_path IS NOT NULL`
+    )
+    .all(accountId, userId) as { media_path: string }[];
+
   db.prepare(`DELETE FROM competitor_accounts WHERE id = ? AND user_id = ?`).run(accountId, userId);
+  for (const { media_path } of mediaPaths) deleteUploadIfExists(media_path);
 }
 
 // ─── Videos ──────────────────────────────────────────────────────────────────
@@ -304,10 +324,19 @@ export function setVideoStatus(videoId: number, status: string, errorMsg?: strin
 // Borra videos (scrapeados o ya analizados) elegidos a mano por el usuario.
 // Acotado a las cuentas del propio userId, así que no puede tocar videos de
 // otro usuario aunque intente colar un id ajeno. FK ON DELETE CASCADE se
-// encarga de transcript/análisis/guiones adaptados asociados.
+// encarga de transcript/análisis/guiones adaptados asociados — pero no de los
+// archivos de audio/video subidos a disco para esos guiones, que hay que
+// limpiar a mano o quedan huérfanos ocupando espacio para siempre.
 export function deleteVideos(userId: number, ids: number[]): number {
   if (ids.length === 0) return 0;
   const placeholders = ids.map(() => "?").join(",");
+  const mediaPaths = db
+    .prepare(
+      `SELECT media_path FROM competitor_scripts
+       WHERE video_id IN (${placeholders}) AND user_id = ? AND media_path IS NOT NULL`
+    )
+    .all(...ids, userId) as { media_path: string }[];
+
   const res = db
     .prepare(
       `DELETE FROM competitor_videos
@@ -315,6 +344,7 @@ export function deleteVideos(userId: number, ids: number[]): number {
          AND account_id IN (SELECT id FROM competitor_accounts WHERE user_id = ?)`
     )
     .run(...ids, userId);
+  for (const { media_path } of mediaPaths) deleteUploadIfExists(media_path);
   return Number(res.changes);
 }
 
@@ -410,7 +440,8 @@ export function listAdaptedScripts(
   return db
     .prepare(
       `SELECT cs.id, cs.video_id, cs.user_id, cs.format, cs.title, cs.hook, cs.puente, cs.body, cs.cta, cs.adaptation_notes, cs.status, cs.model, cs.created_at,
-              cv.video_url, cv.title as video_title, cv.views, cv.likes, cv.comments,
+              cs.media_path, cs.media_original_name, cs.media_mime, cs.media_size, cs.media_uploaded_at,
+              cv.video_url, cv.title as video_title, cv.thumbnail_url, cv.views, cv.likes, cv.comments,
               ca.handle as account_handle, ca.platform as account_platform,
               an.hook as original_hook, an.viral_score
        FROM competitor_scripts cs
@@ -440,6 +471,54 @@ export function countAdaptedScripts(userId: number, opts: AdaptedScriptFilters =
 
 export function updateCompetitorScriptStatus(userId: number, scriptId: number, status: string): void {
   db.prepare(`UPDATE competitor_scripts SET status = ? WHERE id = ? AND user_id = ?`).run(status, scriptId, userId);
+}
+
+// ─── Audio/video subido por el usuario (para el editor) ────────────────────────
+
+export type ScriptMedia = {
+  media_path: string | null;
+  media_original_name: string | null;
+  media_mime: string | null;
+  media_size: number | null;
+};
+
+export function getScriptMedia(userId: number, scriptId: number): ScriptMedia | null {
+  return (
+    (db
+      .prepare(
+        `SELECT media_path, media_original_name, media_mime, media_size
+         FROM competitor_scripts WHERE id = ? AND user_id = ?`
+      )
+      .get(scriptId, userId) as ScriptMedia | undefined) ?? null
+  );
+}
+
+export function setScriptMedia(
+  userId: number,
+  scriptId: number,
+  media: { path: string; originalName: string; mime: string; size: number }
+): boolean {
+  const res = db
+    .prepare(
+      `UPDATE competitor_scripts
+       SET media_path = ?, media_original_name = ?, media_mime = ?, media_size = ?, media_uploaded_at = ?
+       WHERE id = ? AND user_id = ?`
+    )
+    .run(media.path, media.originalName, media.mime, media.size, new Date().toISOString(), scriptId, userId);
+  return res.changes > 0;
+}
+
+// Devuelve la ruta del archivo que había (para poder borrarlo del disco) y
+// limpia los campos en la BD. null si no había nada o el script no es tuyo.
+export function clearScriptMedia(userId: number, scriptId: number): string | null {
+  const current = getScriptMedia(userId, scriptId);
+  if (!current?.media_path) return null;
+  db.prepare(
+    `UPDATE competitor_scripts
+     SET media_path = NULL, media_original_name = NULL, media_mime = NULL, media_size = NULL, media_uploaded_at = NULL
+     WHERE id = ? AND user_id = ?`
+  ).run(scriptId, userId);
+  return current.media_path;
 }
 
 // ─── Accounts que toca comprobar ahora ────────────────────────────────────────
