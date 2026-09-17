@@ -3,31 +3,51 @@ import { env } from "../lib/env";
 import { runCycle } from "../lib/pipeline";
 
 const ONCE = process.argv.includes("--once");
+const DEFAULT_CRON = "0 */2 * * *";
 
 function ts(): string {
   return new Date().toLocaleTimeString("es-ES");
+}
+
+// Si POLL_CRON viniera mal formado, cron.schedule() lanzaría dentro de main(),
+// y el bucle de reintento de start() (más abajo) repetiría el CICLO COMPLETO
+// cada 30s para siempre (noticias + competencia + Whisper + Claude, por cada
+// usuario) — y como el ciclo en sí tiene éxito, el heartbeat lo reportaría
+// como "sano" todo el tiempo. Por eso se valida aquí, antes de intentar
+// programarlo, y se usa un valor por defecto seguro en vez de reintentar.
+function resolvePollCron(): string {
+  if (cron.validate(env.pollCron)) return env.pollCron;
+  console.error(
+    `[${ts()}] ✖ POLL_CRON inválido ("${env.pollCron}"), usando el valor por defecto "${DEFAULT_CRON}"`
+  );
+  return DEFAULT_CRON;
+}
+const POLL_CRON = resolvePollCron();
+
+function describeCompetitor(comp: Awaited<ReturnType<typeof runCycle>>["competitor"]): string {
+  if (!comp) return "";
+  if (comp.unavailable.length > 0) {
+    return ` · espías: +${comp.inserted} videos (faltan: ${comp.unavailable.join(", ")})`;
+  }
+  return ` · espías: +${comp.inserted} videos`;
+}
+
+function describeTranscription(trans: Awaited<ReturnType<typeof runCycle>>["transcribed"]): string {
+  if (!trans) return "";
+  if (trans.processed > 0) return ` · transcriptos: ${trans.processed}`;
+  if (trans.noKey > 0) return ` · transcripción: sin clave OpenAI`;
+  return "";
 }
 
 async function cycle(): Promise<void> {
   console.log(`\n[${ts()}] ▶ ciclo iniciado`);
   const r = await runCycle();
   if (!r.ok) console.warn(`[${ts()}] ⚠ ${r.error}`);
-  const comp = r.competitor;
-  const trans = r.transcribed;
-  const compStr = !comp
-    ? ""
-    : !comp.available
-    ? " · yt-dlp: no instalado"
-    : ` · espías: +${comp.inserted} videos`;
-  const transStr = trans && trans.processed > 0
-    ? ` · transcriptos: ${trans.processed}`
-    : trans && trans.noKey > 0
-    ? ` · transcripción: sin clave OpenAI`
-    : "";
 
   console.log(
     `[${ts()}] ✔ noticias: ${r.inserted}/${r.fetched} · ` +
-      `u${r.users} · clasif: ${r.classified} · guiones: ${r.generated}${compStr}${transStr}`
+      `u${r.users} · clasif: ${r.classified} · guiones: ${r.generated}` +
+      `${describeCompetitor(r.competitor)}${describeTranscription(r.transcribed)}`
   );
 }
 
@@ -46,7 +66,7 @@ process.on("unhandledRejection", (e) => {
 
 async function main(): Promise<void> {
   console.log("=== Worker AI Actualidad (multiusuario) ===");
-  console.log(`Cron: ${env.pollCron} · las noticias se traen siempre; cada usuario clasifica/genera con su clave.`);
+  console.log(`Cron: ${POLL_CRON} · las noticias se traen siempre; cada usuario clasifica/genera con su clave.`);
 
   try {
     await cycle();
@@ -59,10 +79,10 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  cron.schedule(env.pollCron, () => {
+  cron.schedule(POLL_CRON, () => {
     cycle().catch((e) => console.error(`[${ts()}] ✖ ciclo falló:`, e));
   });
-  console.log(`\nWorker activo. Próximos ciclos según cron "${env.pollCron}". Ctrl+C para salir.`);
+  console.log(`\nWorker activo. Próximos ciclos según cron "${POLL_CRON}". Ctrl+C para salir.`);
 }
 
 // Si algo impide arrancar (p.ej. la BD ocupada porque la web la está

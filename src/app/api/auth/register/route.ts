@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createUser, emailExists, createSession } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/cookies";
+import { readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const b = (await req.json().catch(() => ({}))) as { email?: string; name?: string; password?: string };
+  const b = await readJsonBody<{ email?: string; name?: string; password?: string }>(req);
   const email = (b.email ?? "").trim().toLowerCase();
   const password = b.password ?? "";
 

@@ -4,10 +4,13 @@ import { fetchRecentReels } from "./providers/instagram";
 import { readUserSettings } from "./settings";
 
 export type CompetitorPollResult = {
-  available: boolean;
   checked: number;
   inserted: number;
   skipped: number;
+  // Dependencias ausentes detectadas durante este poll ("yt-dlp", "apify"),
+  // para poder avisar de verdad en vez de un booleano `available` que nunca
+  // reflejaba nada (antes siempre valía true, pasara lo que pasara).
+  unavailable: string[];
 };
 
 type DueAccount = {
@@ -26,17 +29,20 @@ type DueAccount = {
 // Enrutado por plataforma:
 //   • instagram → Apify (proxies residenciales, no expone IP ni cuenta)
 //   • youtube / tiktok → yt-dlp
-export async function pollCompetitorAccounts(): Promise<CompetitorPollResult> {
-  const accounts = accountsDue() as DueAccount[];
-  if (accounts.length === 0) return { available: true, checked: 0, inserted: 0, skipped: 0 };
+// Sin userId: TODAS las cuentas debidas de todos los usuarios (worker de
+// fondo). Con userId: solo las de ese usuario (endpoints HTTP por-usuario).
+export async function pollCompetitorAccounts(userId?: number): Promise<CompetitorPollResult> {
+  const accounts = accountsDue(userId) as DueAccount[];
+  if (accounts.length === 0) return { checked: 0, inserted: 0, skipped: 0, unavailable: [] };
 
   // yt-dlp solo hace falta para youtube/tiktok; Instagram va por Apify.
   const hasYtdlp = await ytdlpAvailable();
   let checked = 0, inserted = 0, skipped = 0;
+  const unavailable = new Set<string>();
 
   for (const account of accounts) {
     try {
-      const videos = await fetchForAccount(account, hasYtdlp);
+      const videos = await fetchForAccount(account, hasYtdlp, unavailable);
       if (videos === null) { markAccountChecked(account.id); continue; } // no disponible (sin token / sin yt-dlp)
 
       markAccountChecked(account.id);
@@ -69,15 +75,22 @@ export async function pollCompetitorAccounts(): Promise<CompetitorPollResult> {
     }
   }
 
-  return { available: true, checked, inserted, skipped };
+  return { checked, inserted, skipped, unavailable: [...unavailable] };
 }
 
 // Devuelve los videos de una cuenta, o null si esa plataforma no está disponible
 // (Instagram sin token de Apify, o yt-dlp no instalado para youtube/tiktok).
-async function fetchForAccount(account: DueAccount, hasYtdlp: boolean): Promise<YtdlpVideoMeta[] | null> {
+// Registra en `unavailable` qué dependencia faltó, para que el llamador pueda
+// mostrar un aviso real en vez de un genérico "0 videos nuevos".
+async function fetchForAccount(
+  account: DueAccount,
+  hasYtdlp: boolean,
+  unavailable: Set<string>
+): Promise<YtdlpVideoMeta[] | null> {
   if (account.platform === "instagram") {
     const token = readUserSettings(account.user_id).apifyToken;
     if (!token) {
+      unavailable.add("apify");
       console.warn(`[competitor] @${account.handle}: Instagram requiere token de Apify (Ajustes → Instagram). Omitida.`);
       return null;
     }
@@ -86,6 +99,7 @@ async function fetchForAccount(account: DueAccount, hasYtdlp: boolean): Promise<
 
   // youtube / tiktok
   if (!hasYtdlp) {
+    unavailable.add("yt-dlp");
     console.warn(`[competitor] @${account.handle}: yt-dlp no instalado, ${account.platform} omitida.`);
     return null;
   }

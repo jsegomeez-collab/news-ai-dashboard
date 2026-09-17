@@ -1,7 +1,16 @@
 "use client";
-import { usePoll, timeAgo } from "@/components/usePoll";
+import { usePoll } from "@/components/usePoll";
 
-type Worker = { lastRunAt: string; lastOk: boolean; lastError: string | null } | null;
+type Worker = {
+  lastOk: boolean;
+  lastError: string | null;
+  ageSeconds: number;
+  competitorOk: boolean;
+  competitorChecked: number;
+  competitorInserted: number;
+  transcribedProcessed: number;
+  transcribedErrors: number;
+} | null;
 
 type Status = {
   hasKey: boolean;
@@ -13,18 +22,40 @@ type Status = {
   window: { active: boolean; intervalHours: number };
 };
 
-// Umbral heurístico: el cron por defecto corre cada 2h (POLL_CRON), así que más
-// de 2 ciclos de margen sin noticias de vida ya es motivo de aviso.
+// Umbral heurístico: el cron por defecto corre cada 2h (POLL_CRON). WARN da
+// margen de un ciclo largo (~1.5x) antes de avisar; BAD da margen de 3 ciclos
+// completos, punto en el que "se está retrasando" ya es "está parado".
 const WORKER_WARN_MIN = 3 * 60;
 const WORKER_BAD_MIN = 6 * 60;
 
+// Formatea una antigüedad en segundos (ya calculada por el servidor) sin
+// volver a restar contra el reloj del navegador — inmune a que el reloj del
+// visitante esté desajustado.
+function ageLabel(ageSeconds: number): string {
+  if (ageSeconds < 60) return "hace un momento";
+  if (ageSeconds < 3600) return `hace ${Math.floor(ageSeconds / 60)} min`;
+  if (ageSeconds < 86400) return `hace ${Math.floor(ageSeconds / 3600)} h`;
+  return `hace ${Math.floor(ageSeconds / 86400)} d`;
+}
+
 function workerPill(w: Worker): { value: string; tone: "default" | "good" | "warn" | "bad"; title?: string } {
   if (!w) return { value: "nunca ha corrido", tone: "bad" };
-  const minutesAgo = Math.floor((Date.now() - new Date(w.lastRunAt).getTime()) / 60000);
-  if (!w.lastOk) return { value: `falló ${timeAgo(w.lastRunAt)}`, tone: "bad", title: w.lastError ?? undefined };
-  if (minutesAgo >= WORKER_BAD_MIN) return { value: `parado, ${timeAgo(w.lastRunAt)}`, tone: "bad" };
-  if (minutesAgo >= WORKER_WARN_MIN) return { value: timeAgo(w.lastRunAt), tone: "warn" };
-  return { value: timeAgo(w.lastRunAt), tone: "good" };
+  const minutesAgo = w.ageSeconds / 60;
+  const age = ageLabel(w.ageSeconds);
+  if (!w.lastOk) return { value: `falló ${age}`, tone: "bad", title: w.lastError ?? undefined };
+  if (minutesAgo >= WORKER_BAD_MIN) return { value: `parado, ${age}`, tone: "bad" };
+  if (minutesAgo >= WORKER_WARN_MIN) return { value: age, tone: "warn" };
+  return { value: age, tone: "good" };
+}
+
+// El worker puede seguir "vivo" (noticias/guiones funcionando) mientras el
+// pipeline de espionaje de competencia está roto entero (Apify caído, yt-dlp
+// roto...) sin que la pill "Worker" lo refleje. Esta pill separada lo cubre.
+function competitorPill(w: Worker): { value: string; tone: "default" | "good" | "warn" | "bad"; title?: string } {
+  if (!w) return { value: "—", tone: "default" };
+  if (!w.competitorOk) return { value: "error", tone: "bad", title: w.lastError ?? undefined };
+  if (w.transcribedErrors > 0) return { value: `${w.transcribedErrors} error(es) transcribiendo`, tone: "warn" };
+  return { value: `+${w.competitorInserted} videos / ${w.transcribedProcessed} transcritos`, tone: "default" };
 }
 
 function Pill({
@@ -62,6 +93,7 @@ export function StatusBar() {
       )}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-edge bg-panel px-4 py-2 text-xs">
       <Pill label="Worker" {...workerPill(data.worker ?? null)} />
+      <Pill label="Espías" {...competitorPill(data.worker ?? null)} />
       <Pill label="Clave Anthropic" value={data.hasKey ? "conectada" : "falta"} tone={data.hasKey ? "good" : "bad"} />
       <Pill label="Guiones hoy" value={`${b.scriptsToday}/${b.maxScripts}`} tone={b.canGenerate ? "default" : "warn"} />
       <Pill label="Gasto hoy" value={`$${b.costToday.toFixed(2)}/$${b.maxUsd.toFixed(0)}`} tone={b.canGenerate ? "default" : "warn"} />

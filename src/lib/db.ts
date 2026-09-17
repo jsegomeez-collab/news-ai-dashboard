@@ -313,14 +313,19 @@ CREATE INDEX IF NOT EXISTS idx_comp_scripts_video ON competitor_scripts(video_id
 -- Fila única: último latido del worker de fondo. Si esto deja de actualizarse,
 -- el worker está muerto aunque la web siga respondiendo con normalidad.
 CREATE TABLE IF NOT EXISTS worker_heartbeat (
-  id          INTEGER PRIMARY KEY CHECK (id = 1),
-  last_run_at TEXT NOT NULL,
-  last_ok     INTEGER NOT NULL,
-  last_error  TEXT,
-  fetched     INTEGER NOT NULL DEFAULT 0,
-  inserted    INTEGER NOT NULL DEFAULT 0,
-  classified  INTEGER NOT NULL DEFAULT 0,
-  generated   INTEGER NOT NULL DEFAULT 0
+  id                    INTEGER PRIMARY KEY CHECK (id = 1),
+  last_run_at           TEXT NOT NULL,
+  last_ok               INTEGER NOT NULL,
+  last_error            TEXT,
+  fetched               INTEGER NOT NULL DEFAULT 0,
+  inserted              INTEGER NOT NULL DEFAULT 0,
+  classified            INTEGER NOT NULL DEFAULT 0,
+  generated             INTEGER NOT NULL DEFAULT 0,
+  competitor_ok         INTEGER NOT NULL DEFAULT 1,
+  competitor_checked    INTEGER NOT NULL DEFAULT 0,
+  competitor_inserted   INTEGER NOT NULL DEFAULT 0,
+  transcribed_processed INTEGER NOT NULL DEFAULT 0,
+  transcribed_errors    INTEGER NOT NULL DEFAULT 0
 );
 `);
 
@@ -349,6 +354,24 @@ CREATE TABLE IF NOT EXISTS worker_heartbeat (
   if (!scols.some((c) => c.name === "puente")) {
     r.exec(`ALTER TABLE competitor_scripts ADD COLUMN puente TEXT`);
     console.log("[db] columna puente añadida a competitor_scripts");
+  }
+
+  // Columnas de salud del pipeline de competencia en el heartbeat: sin esto,
+  // el heartbeat solo veía noticias/clasificación/guiones, y un fallo total
+  // del descubrimiento/transcripción de competencia (Apify caído, yt-dlp
+  // roto...) seguía marcando el worker como "sano" en el dashboard.
+  const hcols = r.prepare(`PRAGMA table_info(worker_heartbeat)`).all() as { name: string }[];
+  for (const [col, def] of [
+    ["competitor_ok", "INTEGER NOT NULL DEFAULT 1"],
+    ["competitor_checked", "INTEGER NOT NULL DEFAULT 0"],
+    ["competitor_inserted", "INTEGER NOT NULL DEFAULT 0"],
+    ["transcribed_processed", "INTEGER NOT NULL DEFAULT 0"],
+    ["transcribed_errors", "INTEGER NOT NULL DEFAULT 0"],
+  ] as const) {
+    if (!hcols.some((c) => c.name === col)) {
+      r.exec(`ALTER TABLE worker_heartbeat ADD COLUMN ${col} ${def}`);
+      console.log(`[db] columna ${col} añadida a worker_heartbeat`);
+    }
   }
 }
 

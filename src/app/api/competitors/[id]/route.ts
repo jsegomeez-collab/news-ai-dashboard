@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { getAccount, updateAccount, deleteAccount } from "@/lib/competitor";
+import { readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
@@ -18,14 +19,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const user = getUser(req);
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const { id } = await params;
-  const body = (await req.json().catch(() => ({}))) as {
+  const body = await readJsonBody<{
     active?: boolean;
     display_name?: string;
     min_views?: number;
     min_likes?: number;
     min_comments?: number;
     check_interval_hours?: number;
-  };
+  }>(req);
   updateAccount(user.id, Number(id), body);
   return NextResponse.json({ ok: true });
 }

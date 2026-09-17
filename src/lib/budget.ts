@@ -1,9 +1,6 @@
 import { db } from "./db";
 import { readUserSettings } from "./settings";
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayUTC } from "./env";
 
 export type BudgetState = {
   day: string;
@@ -19,9 +16,10 @@ export type BudgetState = {
 
 export function budgetState(userId: number): BudgetState {
   const s = readUserSettings(userId);
+  const day = todayUTC();
   const row = db
     .prepare(`SELECT scripts_count, cost_usd FROM usage_log WHERE user_id = ? AND day = ?`)
-    .get(userId, today()) as { scripts_count: number; cost_usd: number } | undefined;
+    .get(userId, day) as { scripts_count: number; cost_usd: number } | undefined;
 
   const scriptsToday = row?.scripts_count ?? 0;
   const costToday = row?.cost_usd ?? 0;
@@ -33,7 +31,7 @@ export function budgetState(userId: number): BudgetState {
   else if (usdLeft <= 0) reason = "Alcanzado el tope diario de gasto (USD)";
 
   return {
-    day: today(),
+    day,
     scriptsToday,
     costToday,
     maxScripts: s.maxScriptsPerDay,

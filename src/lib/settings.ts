@@ -97,10 +97,14 @@ export function hasUserKey(userId: number): boolean {
 
 // ¿Estamos dentro de una ráfaga de generación activa según la ventana del usuario?
 // windowIntervalHours=0 → siempre activo. Si no, ráfagas de windowMinutes cada
-// windowIntervalHours horas, alineadas a la medianoche.
+// windowIntervalHours horas, alineadas a la medianoche UTC.
+// Usa horas UTC (no locales) a propósito: el tope diario de gasto/guiones
+// (budget.ts, vía todayUTC()) resetea a medianoche UTC. Si esta ventana usara
+// la hora local del servidor y éste corriera en un TZ distinto de UTC, la
+// "ráfaga diaria" y el "tope diario" apuntarían a dos días distintos.
 export function withinGenerationWindow(s: UserSettings, now = new Date()): boolean {
   if (s.windowIntervalHours <= 0 || s.windowMinutes <= 0) return true;
-  const minutesOfDay = now.getHours() * 60 + now.getMinutes();
+  const minutesOfDay = now.getUTCHours() * 60 + now.getUTCMinutes();
   const cycle = s.windowIntervalHours * 60;
   return minutesOfDay % cycle < s.windowMinutes;
 }

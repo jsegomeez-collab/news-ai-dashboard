@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { setScriptStatus, upsertMetrics, ownsScript, type MetricsInput } from "@/lib/queries";
 import { isStatus } from "@/lib/status";
 import { getUser } from "@/lib/auth";
+import { readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { status?: string; metrics?: MetricsInput };
+  const body = await readJsonBody<{ status?: string; metrics?: MetricsInput }>(req);
   if (body.status) {
     if (!isStatus(body.status)) return NextResponse.json({ error: "estado inválido" }, { status: 400 });
     setScriptStatus(user.id, scriptId, body.status);

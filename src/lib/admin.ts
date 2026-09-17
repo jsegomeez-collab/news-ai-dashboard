@@ -1,8 +1,5 @@
 import { db } from "./db";
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayUTC } from "./env";
 
 export type AdminUserRow = {
   id: number;
@@ -33,7 +30,7 @@ export function adminOverview(): {
        FROM users u
        ORDER BY cost_total DESC, u.created_at DESC`
     )
-    .all(today()) as AdminUserRow[];
+    .all(todayUTC()) as AdminUserRow[];
 
   const num = (sql: string, ...a: unknown[]) =>
     (db.prepare(sql).get(...(a as never[])) as { n: number }).n;

@@ -163,9 +163,10 @@ export function deleteAccount(userId: number, accountId: number): void {
 
 export function listVideos(
   userId: number,
-  opts: { accountId?: number; status?: string; limit?: number } = {}
+  opts: { accountId?: number; status?: string; limit?: number; offset?: number } = {}
 ): CompetitorVideo[] {
   const limit = opts.limit ?? 100;
+  const offset = opts.offset ?? 0;
   const extraWheres: string[] = [];
   const extraParams: unknown[] = [];
 
@@ -173,7 +174,7 @@ export function listVideos(
   if (opts.status) { extraWheres.push("cv.status = ?"); extraParams.push(opts.status); }
 
   const whereClause = ["ca.user_id = ?", ...extraWheres].join(" AND ");
-  const allParams: unknown[] = [userId, userId, ...extraParams, limit];
+  const allParams: unknown[] = [userId, userId, ...extraParams, limit, offset];
 
   return db
     .prepare(
@@ -188,9 +189,45 @@ export function listVideos(
        LEFT JOIN competitor_transcripts tr ON tr.video_id = cv.id
        WHERE ${whereClause}
        ORDER BY cv.fetched_at DESC
-       LIMIT ?`
+       LIMIT ? OFFSET ?`
     )
     .all(...(allParams as never[])) as CompetitorVideo[];
+}
+
+export function countVideos(userId: number, opts: { accountId?: number; status?: string } = {}): number {
+  const extraWheres: string[] = [];
+  const extraParams: unknown[] = [];
+  if (opts.accountId !== undefined) { extraWheres.push("cv.account_id = ?"); extraParams.push(opts.accountId); }
+  if (opts.status) { extraWheres.push("cv.status = ?"); extraParams.push(opts.status); }
+  const whereClause = ["ca.user_id = ?", ...extraWheres].join(" AND ");
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) as n FROM competitor_videos cv
+         JOIN competitor_accounts ca ON ca.id = cv.account_id
+         WHERE ${whereClause}`
+      )
+      .get(userId, ...(extraParams as never[])) as { n: number }
+  ).n;
+}
+
+// Recuento por status (sobre TODOS los videos de la cuenta filtrada, no solo
+// la página actual) — para que botones como "Transcribir todos (N)" muestren
+// el total real aunque la lista visible esté paginada a 20 por página.
+export function videoStatusCounts(userId: number, accountId?: number): Record<string, number> {
+  const scope = accountId !== undefined ? ` AND cv.account_id = ?` : ``;
+  const params = accountId !== undefined ? [userId, accountId] : [userId];
+  const rows = db
+    .prepare(
+      `SELECT cv.status, COUNT(*) as n FROM competitor_videos cv
+       JOIN competitor_accounts ca ON ca.id = cv.account_id
+       WHERE ca.user_id = ?${scope}
+       GROUP BY cv.status`
+    )
+    .all(...(params as never[])) as { status: string; n: number }[];
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.status] = r.n;
+  return out;
 }
 
 export function getVideo(userId: number, videoId: number): CompetitorVideo | null {
@@ -251,7 +288,11 @@ export function insertVideo(
         new Date().toISOString()
       );
     return res.changes > 0 ? Number(res.lastInsertRowid) : null;
-  } catch {
+  } catch (e) {
+    // INSERT OR IGNORE no lanza por duplicados (solo devuelve changes=0, ya
+    // gestionado arriba) — si esto salta es un fallo real (constraint, disco,
+    // tipo de dato) que antes se tragaba en silencio como si fuera un duplicado más.
+    console.warn(`[competitor] insertVideo falló para ${data.video_url}:`, (e as Error).message);
     return null;
   }
 }
@@ -339,16 +380,23 @@ export function updateCompetitorScriptStatus(userId: number, scriptId: number, s
 
 // ─── Accounts que toca comprobar ahora ────────────────────────────────────────
 
-export function accountsDue(): { id: number; user_id: number; platform: string; handle: string; url: string; check_interval_hours: number; min_views: number; min_likes: number; min_comments: number }[] {
+// Sin userId: TODAS las cuentas debidas de TODOS los usuarios (uso del worker
+// de fondo, que sí debe barrer a todo el mundo). Con userId: solo las de ese
+// usuario (uso de los endpoints HTTP, para no procesar cuentas ajenas como
+// efecto colateral de que un usuario pulse "revisar ahora").
+export function accountsDue(userId?: number): { id: number; user_id: number; platform: string; handle: string; url: string; check_interval_hours: number; min_views: number; min_likes: number; min_comments: number }[] {
+  const scope = userId !== undefined ? ` AND user_id = ?` : ``;
+  const params = userId !== undefined ? [userId] : [];
   return db
     .prepare(
       `SELECT id, user_id, platform, handle, url, check_interval_hours, min_views, min_likes, min_comments
        FROM competitor_accounts
        WHERE active = 1
          AND (last_checked_at IS NULL
-           OR datetime(last_checked_at, '+' || check_interval_hours || ' hours') <= datetime('now'))`
+           OR datetime(last_checked_at, '+' || check_interval_hours || ' hours') <= datetime('now'))
+         ${scope}`
     )
-    .all() as never[];
+    .all(...(params as never[])) as never[];
 }
 
 export function markAccountChecked(accountId: number): void {
@@ -374,15 +422,56 @@ export type PendingVideo = {
   media_url: string | null;
 };
 
-export function pendingVideosWithUser(limit = 5): PendingVideo[] {
+// Sin userId: pendientes de TODOS los usuarios (worker de fondo). Con userId:
+// solo los de ese usuario (para que un endpoint HTTP por-usuario, como
+// /api/competitors/run, no transcriba/gaste presupuesto de otros usuarios).
+export function pendingVideosWithUser(limit = 5, userId?: number): PendingVideo[] {
+  const scope = userId !== undefined ? ` AND ca.user_id = ?` : ``;
+  const params = userId !== undefined ? [userId, limit] : [limit];
   return db
     .prepare(
       `SELECT cv.id, cv.video_url, cv.media_url, ca.user_id, ca.platform
        FROM competitor_videos cv
        JOIN competitor_accounts ca ON ca.id = cv.account_id
-       WHERE cv.status = 'pending'
+       WHERE cv.status = 'pending'${scope}
        ORDER BY cv.fetched_at ASC
        LIMIT ?`
     )
-    .all(limit) as PendingVideo[];
+    .all(...(params as never[])) as PendingVideo[];
+}
+
+// Un único video por id, acotado al usuario dueño de la cuenta — sin importar
+// su status (a diferencia de pendingVideosWithUser, que solo ve 'pending').
+// Usado por el botón manual de transcripción/reintento en la UI.
+export function pendingVideoById(userId: number, videoId: number): PendingVideo | null {
+  return (
+    (db
+      .prepare(
+        `SELECT cv.id, cv.video_url, cv.media_url, ca.user_id, ca.platform
+         FROM competitor_videos cv
+         JOIN competitor_accounts ca ON ca.id = cv.account_id
+         WHERE cv.id = ? AND ca.user_id = ?`
+      )
+      .get(videoId, userId) as PendingVideo | undefined) ?? null
+  );
+}
+
+// ─── Limpieza automática ───────────────────────────────────────────────────────
+
+const STALE_TRANSCRIBED_DAYS = 60;
+
+// Un video ya transcrito (tiene fila en competitor_transcripts) que lleva
+// STALE_TRANSCRIBED_DAYS+ sin terminar de analizarse (atascado en 'analysing'
+// o fallido en 'error' tras la transcripción) se descarta para no acumular
+// contenido muerto sin límite. Los videos 'done' (analizados) nunca se tocan.
+export function pruneStaleTranscribedVideos(): number {
+  const cutoff = new Date(Date.now() - STALE_TRANSCRIBED_DAYS * 86400_000).toISOString();
+  const res = db
+    .prepare(
+      `DELETE FROM competitor_videos
+       WHERE status != 'done'
+         AND id IN (SELECT video_id FROM competitor_transcripts WHERE created_at < ?)`
+    )
+    .run(cutoff);
+  return Number(res.changes);
 }

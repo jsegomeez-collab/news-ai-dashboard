@@ -9,11 +9,29 @@ import { refreshReelMediaUrl } from "./providers/instagram";
 
 const WHISPER_MAX_BYTES = 24 * 1024 * 1024; // Whisper API: límite 25MB, dejamos margen.
 
-// Clientes OpenAI por API key (reutilizados).
+// Una clave de Anthropic ("sk-ant-...") también empieza por "sk-", así que un
+// simple startsWith("sk-") aceptaba por error una clave de Anthropic pegada
+// en el campo de OpenAI, dejando pasar la validación para fallar más tarde
+// con un 401 crudo de la API en vez del aviso claro que existe para esto.
+export function isOpenAiKeyFormat(key: string): boolean {
+  return key.startsWith("sk-") && !key.startsWith("sk-ant-");
+}
+
+// Clientes OpenAI por API key (reutilizados). Acotado a un tamaño máximo para
+// que rotar claves repetidamente en Ajustes no acumule clientes sin límite
+// durante la vida del proceso.
 const _openaiClients = new Map<string, OpenAI>();
+const MAX_CACHED_CLIENTS = 50;
 function openaiClient(apiKey: string): OpenAI {
   let c = _openaiClients.get(apiKey);
-  if (!c) { c = new OpenAI({ apiKey }); _openaiClients.set(apiKey, c); }
+  if (!c) {
+    c = new OpenAI({ apiKey });
+    if (_openaiClients.size >= MAX_CACHED_CLIENTS) {
+      const oldest = _openaiClients.keys().next().value;
+      if (oldest !== undefined) _openaiClients.delete(oldest);
+    }
+    _openaiClients.set(apiKey, c);
+  }
   return c;
 }
 
@@ -61,7 +79,7 @@ export async function transcribeOneVideo(
   userId: number
 ): Promise<{ ok: boolean; error?: string }> {
   const settings = readUserSettings(userId);
-  if (!settings.openaiKey.startsWith("sk-")) {
+  if (!isOpenAiKeyFormat(settings.openaiKey)) {
     return { ok: false, error: "Configura tu clave de OpenAI en Ajustes para transcribir." };
   }
 
@@ -96,9 +114,11 @@ export async function transcribeOneVideo(
   }
 }
 
-// Procesa los videos pendientes de transcripción (máx. `limit` por ciclo para no bloquear el worker).
-export async function transcribePendingVideos(limit = 5): Promise<TranscribeResult> {
-  const pending = pendingVideosWithUser(limit);
+// Procesa los videos pendientes de transcripción (máx. `limit` por ciclo para
+// no bloquear el worker). Sin userId: pendientes de todos los usuarios (worker
+// de fondo). Con userId: solo los de ese usuario (endpoints HTTP por-usuario).
+export async function transcribePendingVideos(limit = 5, userId?: number): Promise<TranscribeResult> {
+  const pending = pendingVideosWithUser(limit, userId);
   if (pending.length === 0) return { processed: 0, errors: 0, noKey: 0 };
 
   let hasYtdlp: boolean | null = null; // se comprueba solo si hay videos de youtube/tiktok
@@ -106,7 +126,7 @@ export async function transcribePendingVideos(limit = 5): Promise<TranscribeResu
 
   for (const pv of pending) {
     const settings = readUserSettings(pv.user_id);
-    if (!settings.openaiKey.startsWith("sk-")) { noKey++; continue; }
+    if (!isOpenAiKeyFormat(settings.openaiKey)) { noKey++; continue; }
 
     const isInstagram = pv.platform === "instagram";
     const mediaPath = join(tmpdir(), `comp-${pv.id}-${Date.now()}.${isInstagram ? "mp4" : "mp3"}`);

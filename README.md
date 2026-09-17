@@ -25,13 +25,13 @@ Hace dos cosas, sin que tengas que tocar nada:
    ```
    Edita `.env` y pon tu `ANTHROPIC_API_KEY`.
 
-2. **Suelta tus documentos** en la carpeta `knowledge/` (ver `knowledge/README.md`):
-   - `knowledge/bases-negocio/` → `problema`, `cliente-ideal`, `oferta`, `competencia` (`.md`, `.txt`, `.pdf` o `.docx`)
-   - `knowledge/tonalidad/` → transcripciones/ejemplos de tu forma de hablar
-   - `knowledge/historia/` → tu historia y marca
+2. **Rellena tu marca** desde la pestaña **🧠 Marca** del dashboard (no desde
+   archivos locales): problema, cliente ideal, oferta, análisis de
+   competencia, tonalidad e historia. Se guarda en la base de datos y se usa
+   al instante en el siguiente guion, sin reiniciar nada.
 
-   No hace falta tenerlos todos, pero cuantos más y mejores, más "tuyos" salen los guiones.
-   Se recargan solos cuando cambian (no tienes que reiniciar).
+   (La carpeta `knowledge/` del repo es un mecanismo antiguo, ya retirado del
+   código — no la uses, lo que ahí pongas no se lee.)
 
 3. **Instala y arranca**
    ```bash
@@ -40,7 +40,7 @@ Hace dos cosas, sin que tengas que tocar nada:
    ```
    Abre **http://localhost:3000**. `npm run dev` levanta a la vez:
    - la **web** (dashboard), y
-   - el **worker** de fondo que cada 10 min trae noticias, las clasifica y genera guiones.
+   - el **worker** de fondo que trae noticias, las clasifica y genera guiones según `POLL_CRON` (cada 2h por defecto).
 
 ---
 

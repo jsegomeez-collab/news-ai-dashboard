@@ -7,13 +7,13 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 // Disparo manual del descubrimiento de videos de competencia.
-// Comprueba solo las cuentas activas (sin forzar las que aún no toca).
+// Comprueba solo las cuentas activas de ESTE usuario (sin forzar las que aún
+// no toca, y sin tocar cuentas de otros usuarios como efecto colateral).
 export async function POST(req: NextRequest) {
   const user = getUser(req);
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  // Cuántas cuentas del usuario están programadas para revisarse ahora.
-  const due = accountsDue().filter((a) => a.user_id === user.id);
+  const due = accountsDue(user.id);
   if (due.length === 0) {
     return NextResponse.json({
       ok: true,
@@ -23,12 +23,13 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const result = await pollCompetitorAccounts();
+  const result = await pollCompetitorAccounts(user.id);
   return NextResponse.json({
     ok: true,
     ...result,
-    message: result.available
-      ? `${result.checked} cuenta(s) revisadas, ${result.inserted} videos nuevos encontrados.`
-      : "yt-dlp no está instalado. Instálalo para activar el descubrimiento automático.",
+    message:
+      result.unavailable.length > 0
+        ? `${result.checked} cuenta(s) revisadas, ${result.inserted} videos nuevos. Faltan dependencias: ${result.unavailable.join(", ")}.`
+        : `${result.checked} cuenta(s) revisadas, ${result.inserted} videos nuevos encontrados.`,
   });
 }

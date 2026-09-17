@@ -1,9 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PRICING } from "./env";
+import { PRICING, todayUTC } from "./env";
 import { db } from "./db";
 
-// Un cliente por clave (cada usuario trae la suya).
+// Un cliente por clave (cada usuario trae la suya), acotado a un tamaño
+// máximo para que rotar claves repetidamente en Ajustes no acumule clientes
+// sin límite durante la vida del proceso.
 const _clients = new Map<string, Anthropic>();
+const MAX_CACHED_CLIENTS = 50;
 export function client(apiKey: string): Anthropic {
   if (!apiKey?.startsWith("sk-ant-")) {
     throw new Error("Falta tu clave de Anthropic (debe empezar por 'sk-ant-'). Ponla en Ajustes.");
@@ -11,13 +14,13 @@ export function client(apiKey: string): Anthropic {
   let c = _clients.get(apiKey);
   if (!c) {
     c = new Anthropic({ apiKey });
+    if (_clients.size >= MAX_CACHED_CLIENTS) {
+      const oldest = _clients.keys().next().value;
+      if (oldest !== undefined) _clients.delete(oldest);
+    }
     _clients.set(apiKey, c);
   }
   return c;
-}
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 type Usage = {
@@ -52,7 +55,7 @@ export function recordUsage(userId: number, model: string, usage: Usage, scripts
        output_tokens = output_tokens + excluded.output_tokens,
        cost_usd = cost_usd + excluded.cost_usd,
        scripts_count = scripts_count + excluded.scripts_count`
-  ).run(userId, today(), inTok + cacheRead + cacheWrite, outTok, cost, scripts);
+  ).run(userId, todayUTC(), inTok + cacheRead + cacheWrite, outTok, cost, scripts);
 }
 
 // Extrae el primer bloque de texto de una respuesta de Messages.

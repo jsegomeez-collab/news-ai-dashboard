@@ -66,6 +66,14 @@ export function hasApiKey(): boolean {
   return env.anthropicKey.startsWith("sk-ant-");
 }
 
+// Día UTC (YYYY-MM-DD) usado como clave en usage_log: quien escribe el gasto
+// (recordUsage), quien lo lee para el tope diario (budgetState) y el admin
+// deben acordar el mismo "día" o el tope diario deja de corresponderse con
+// el gasto real. Centralizado aquí para que no puedan divergir entre sí.
+export function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 // Precios USD por millón de tokens (input, output). Fuente: skill claude-api.
 export const PRICING: Record<string, { in: number; out: number }> = {
   "claude-haiku-4-5": { in: 1, out: 5 },

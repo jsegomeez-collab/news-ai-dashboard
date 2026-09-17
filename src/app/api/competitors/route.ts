@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { listAccounts, createAccount } from "@/lib/competitor";
+import { readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
   const user = getUser(req);
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  const body = (await req.json().catch(() => ({}))) as {
+  const body = await readJsonBody<{
     platform?: string;
     handle?: string;
     url?: string;
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
     min_likes?: number;
     min_comments?: number;
     check_interval_hours?: number;
-  };
+  }>(req);
 
   const PLATFORMS = ["instagram", "tiktok", "youtube"];
   if (!body.platform || !PLATFORMS.includes(body.platform)) {

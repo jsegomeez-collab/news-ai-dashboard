@@ -8,6 +8,7 @@ import { readUserSettings, withinGenerationWindow } from "./settings";
 import { pollCompetitorAccounts, type CompetitorPollResult } from "./competitor-pipeline";
 import { transcribePendingVideos, type TranscribeResult } from "./whisper";
 import { processAnalysingVideos } from "./competitor-generate";
+import { pruneStaleTranscribedVideos } from "./competitor";
 import { recordHeartbeat } from "./heartbeat";
 
 // Usuarios que tienen una clave de Anthropic configurada.
@@ -115,12 +116,18 @@ export type CycleSummary = {
 // Un ciclo completo: fetch GLOBAL + competencia (descubrimiento + transcripción) + por usuario (clasificar/generar).
 export async function runCycle(): Promise<CycleSummary> {
   const base: CycleSummary = { ok: true, fetched: 0, inserted: 0, users: 0, classified: 0, generated: 0, competitor: null, transcribed: null };
+  // Si el descubrimiento de competencia entero revienta (accountsDue()/DB, no
+  // un fallo por-cuenta que ya se traga internamente), lo marcamos aparte:
+  // el resto del ciclo (noticias/clasificación/guiones) puede seguir yendo
+  // bien y ocultar por completo que la mitad "espionaje" está caída.
+  let competitorOk = true;
   try {
     // Fase 1: noticias + descubrimiento de competencia en paralelo.
     const [poll, competitor] = await Promise.all([
       pollAllSources(),
       pollCompetitorAccounts().catch((e) => {
         console.warn("[cycle] descubrimiento competencia falló:", (e as Error).message);
+        competitorOk = false;
         return null;
       }),
     ]);
@@ -131,12 +138,23 @@ export async function runCycle(): Promise<CycleSummary> {
     // Fase 2: transcripción + análisis/generación (secuenciales, tras el descubrimiento).
     base.transcribed = await transcribePendingVideos(5).catch((e) => {
       console.warn("[cycle] transcripción falló:", (e as Error).message);
+      competitorOk = false;
       return null;
     });
     // Procesa videos ya transcritos (estado 'analysing') → análisis viral + guion adaptado.
-    await processAnalysingVideos(3).catch((e) =>
-      console.warn("[cycle] análisis competencia falló:", (e as Error).message)
-    );
+    await processAnalysingVideos(3).catch((e) => {
+      console.warn("[cycle] análisis competencia falló:", (e as Error).message);
+      competitorOk = false;
+    });
+
+    // Limpieza: videos transcritos que llevan 60+ días sin terminar de
+    // analizarse (atascados/fallidos) — no acumular basura sin límite.
+    try {
+      const pruned = pruneStaleTranscribedVideos();
+      if (pruned > 0) console.log(`[cycle] competencia: ${pruned} video(s) transcritos y no analizados (60+ días) eliminados`);
+    } catch (e) {
+      console.warn("[cycle] limpieza de videos de competencia falló:", (e as Error).message);
+    }
 
     const users = activeUserIds();
     base.users = users.length;
@@ -152,7 +170,18 @@ export async function runCycle(): Promise<CycleSummary> {
         console.warn(`[cycle] u${userId}:`, (e as Error).message);
       }
     }
-    recordHeartbeat({ ok: true, fetched: base.fetched, inserted: base.inserted, classified: base.classified, generated: base.generated });
+    recordHeartbeat({
+      ok: true,
+      fetched: base.fetched,
+      inserted: base.inserted,
+      classified: base.classified,
+      generated: base.generated,
+      competitorOk,
+      competitorChecked: base.competitor?.checked ?? 0,
+      competitorInserted: base.competitor?.inserted ?? 0,
+      transcribedProcessed: base.transcribed?.processed ?? 0,
+      transcribedErrors: base.transcribed?.errors ?? 0,
+    });
     return base;
   } catch (e) {
     const failed = { ...base, ok: false, error: (e as Error).message };
@@ -163,6 +192,11 @@ export async function runCycle(): Promise<CycleSummary> {
       inserted: failed.inserted,
       classified: failed.classified,
       generated: failed.generated,
+      competitorOk,
+      competitorChecked: failed.competitor?.checked ?? 0,
+      competitorInserted: failed.competitor?.inserted ?? 0,
+      transcribedProcessed: failed.transcribed?.processed ?? 0,
+      transcribedErrors: failed.transcribed?.errors ?? 0,
     });
     return failed;
   }

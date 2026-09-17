@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { getVideo, pendingVideosWithUser } from "@/lib/competitor";
+import { getVideo, pendingVideoById } from "@/lib/competitor";
 import { transcribeOneVideo } from "@/lib/whisper";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +19,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: `El video está en estado '${video.status}', no se puede transcribir.` }, { status: 400 });
   }
 
-  // pendingVideosWithUser devuelve el tipo completo con platform y media_url.
-  const pendingRow = pendingVideosWithUser(200).find((v) => v.id === videoId);
+  // Lookup dirigido por id (no la lista global de pendientes, que solo cubre
+  // status='pending' y un límite fijo — un video en 'error' o fuera de esa
+  // ventana nunca aparecía ahí, dejando el botón "reintentar" siempre en 404).
+  const pendingRow = pendingVideoById(user.id, videoId);
   if (!pendingRow) {
     return NextResponse.json({ error: "Video no encontrado en cola de transcripción." }, { status: 404 });
   }

@@ -113,7 +113,13 @@ export function ownsScript(userId: number, scriptId: number): boolean {
 
 export function upsertMetrics(userId: number, scriptId: number, m: MetricsInput): boolean {
   if (!ownsScript(userId, scriptId)) return false;
-  const n = (v: number | undefined) => Math.max(0, Math.round(v ?? 0));
+  // Number.isFinite descarta NaN/Infinity (p.ej. un campo no numérico desde el
+  // cliente), que si no se filtra aquí llega a SQLite como NULL y rompe el
+  // NOT NULL de la columna con un 500 en vez de guardarse como 0.
+  const n = (v: number | undefined) => {
+    const num = Number(v);
+    return Number.isFinite(num) ? Math.max(0, Math.round(num)) : 0;
+  };
   db.prepare(
     `INSERT INTO script_metrics(script_id, views, likes, comments, shares, new_followers, published_at, notes, updated_at)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { listNews, countNews } from "@/lib/queries";
 import { getUser } from "@/lib/auth";
 import { readUserSettings } from "@/lib/settings";
+import { parseIntParam } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +12,10 @@ export function GET(req: NextRequest) {
 
   const sp = req.nextUrl.searchParams;
   const minParam = sp.get("min");
-  const min = minParam !== null ? Number(minParam) : readUserSettings(user.id).newsMinRelevance;
-  const pageSize = Math.max(1, Math.min(200, Number(sp.get("pageSize") ?? "50")));
-  const page = Math.max(1, Number(sp.get("page") ?? "1"));
+  const defaultMin = readUserSettings(user.id).newsMinRelevance;
+  const min = minParam !== null ? parseIntParam(minParam, defaultMin, 0, 100) : defaultMin;
+  const pageSize = parseIntParam(sp.get("pageSize"), 50, 1, 200);
+  const page = parseIntParam(sp.get("page"), 1, 1, 1_000_000);
   const offset = (page - 1) * pageSize;
 
   const total = countNews(user.id, min);

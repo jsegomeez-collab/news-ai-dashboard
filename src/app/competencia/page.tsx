@@ -431,9 +431,12 @@ function ScriptCard({ s }: { s: CompetitorScriptItem }) {
 
 type Tab = "cuentas" | "videos" | "guiones";
 
+const VIDEOS_PAGE_SIZE = 20;
+
 export default function CompetenciaPage() {
   const [tab, setTab] = useState<Tab>("cuentas");
   const [accountFilter, setAccountFilter] = useState<number | undefined>(undefined);
+  const [videoPage, setVideoPage] = useState(1);
   const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [analyzeMsg, setAnalyzeMsg] = useState("");
   const [transcribing, setTranscribing] = useState<number | null>(null);
@@ -444,12 +447,27 @@ export default function CompetenciaPage() {
   const { data: accountsData, refresh: refreshAccounts } = usePoll<{ accounts: CompetitorAccount[] }>(
     "/api/competitors", 30000
   );
-  const { data: videosData, refresh: refreshVideos } = usePoll<{ videos: CompetitorVideo[] }>(
-    `/api/competitors/videos${accountFilter ? `?accountId=${accountFilter}` : ""}`, 15000
+  const { data: videosData, refresh: refreshVideos } = usePoll<{
+    videos: CompetitorVideo[];
+    total: number;
+    pages: number;
+    counts: Record<string, number>;
+  }>(
+    `/api/competitors/videos?page=${videoPage}&pageSize=${VIDEOS_PAGE_SIZE}` +
+      (accountFilter ? `&accountId=${accountFilter}` : ""),
+    15000
   );
 
   const accounts = accountsData?.accounts ?? [];
   const videos = videosData?.videos ?? [];
+  const videosTotal = videosData?.total ?? 0;
+  const videosPages = videosData?.pages ?? 1;
+  const statusCounts = videosData?.counts ?? {};
+
+  function changeAccountFilter(id: number | undefined) {
+    setAccountFilter(id);
+    setVideoPage(1);
+  }
 
   const handlePoll = useCallback(async () => {
     setPolling(true); setPollMsg("");
@@ -457,7 +475,7 @@ export default function CompetenciaPage() {
       const res = await fetch("/api/competitors/poll", { method: "POST" });
       const json = await res.json() as { ok?: boolean; message?: string; inserted?: number; available?: boolean };
       setPollMsg(json.message ?? (json.ok ? "Hecho" : "Error"));
-      if (json.inserted && json.inserted > 0) { refreshVideos(); }
+      if (json.inserted && json.inserted > 0) { setVideoPage(1); refreshVideos(); }
     } finally { setPolling(false); }
   }, [refreshVideos]);
 
@@ -501,8 +519,12 @@ export default function CompetenciaPage() {
       tab === t ? "border-brand text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"
     }`;
 
-  const doneVideos = videos.filter((v) => v.status === "done");
-  const pendingVideos = videos.filter((v) => v.status === "pending");
+  // Recuentos sobre TODOS los videos (vía statusCounts), no solo la página
+  // actual de 20 — así "Transcribir todos (N)" y el resumen reflejan el total
+  // real aunque la lista visible esté paginada.
+  const doneCount = statusCounts.done ?? 0;
+  const pendingCount = statusCounts.pending ?? 0;
+  const analysingCount = statusCounts.analysing ?? 0;
 
   return (
     <div>
@@ -512,7 +534,7 @@ export default function CompetenciaPage() {
           🕵️ Cuentas ({accounts.length})
         </button>
         <button onClick={() => setTab("videos")} className={tabClass("videos")}>
-          📹 Videos ({videos.length})
+          📹 Videos ({videosTotal})
         </button>
         <button onClick={() => setTab("guiones")} className={tabClass("guiones")}>
           ✍️ Guiones adaptados
@@ -591,21 +613,21 @@ export default function CompetenciaPage() {
               {polling ? "Buscando…" : "↻ Descubrir"}
             </button>
 
-            {pendingVideos.length > 0 && (
+            {pendingCount > 0 && (
               <button onClick={() => handleRun("transcribe")} disabled={!!running || !!transcribing}
                 className="rounded bg-indigo-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
-                {running === "transcribe" ? "Transcribiendo…" : `🎙 Transcribir todos (${pendingVideos.length})`}
+                {running === "transcribe" ? "Transcribiendo…" : `🎙 Transcribir todos (${pendingCount})`}
               </button>
             )}
 
-            {(pendingVideos.length > 0 || videos.some(v => v.status === "analysing")) && (
+            {(pendingCount > 0 || analysingCount > 0) && (
               <button onClick={() => handleRun("full")} disabled={!!running || !!transcribing}
                 className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
                 {running === "full" ? "Procesando… (puede tardar unos minutos)" : "🤖 Auto-pilot: transcribir + analizar + guiones"}
               </button>
             )}
 
-            <select value={accountFilter ?? ""} onChange={(e) => setAccountFilter(e.target.value ? Number(e.target.value) : undefined)}
+            <select value={accountFilter ?? ""} onChange={(e) => changeAccountFilter(e.target.value ? Number(e.target.value) : undefined)}
               className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200">
               <option value="">Todas las cuentas</option>
               {accounts.map((a) => (
@@ -614,7 +636,7 @@ export default function CompetenciaPage() {
             </select>
           </div>
           <div className="flex items-center gap-3 text-xs text-zinc-500">
-            <span>{videos.length} videos · {doneVideos.length} analizados · {pendingVideos.length} pendientes</span>
+            <span>{videosTotal} videos · {doneCount} analizados · {pendingCount} pendientes</span>
             {(analyzing !== null || running) && (
               <span className="text-amber-400">Procesando… puede tardar unos minutos</span>
             )}
@@ -636,6 +658,28 @@ export default function CompetenciaPage() {
                   onTranscribe={handleTranscribe}
                   transcribing={transcribing} />
               ))}
+            </div>
+          )}
+
+          {videosPages > 1 && (
+            <div className="mt-2 flex items-center justify-center gap-3">
+              <button
+                onClick={() => setVideoPage((p) => Math.max(1, p - 1))}
+                disabled={videoPage <= 1}
+                className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
+              >
+                ← Anterior
+              </button>
+              <span className="text-sm text-zinc-400">
+                Página {videoPage} de {videosPages}
+              </span>
+              <button
+                onClick={() => setVideoPage((p) => Math.min(videosPages, p + 1))}
+                disabled={videoPage >= videosPages}
+                className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
+              >
+                Siguiente →
+              </button>
             </div>
           )}
         </div>

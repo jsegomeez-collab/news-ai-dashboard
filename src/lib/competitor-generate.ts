@@ -153,12 +153,14 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
     },
   ];
 
+  // Las primeras ~150 palabras suelen cubrir los primeros 10 segundos de un
+  // reel; no depende del formato, así que se calcula una sola vez fuera del
+  // bucle en vez de volver a trocear la transcripción completa por formato.
+  const transcript = video.transcript!;
+  const firstWords = transcript.split(/\s+/).slice(0, 150).join(" ");
+
   for (const format of formats) {
     try {
-      // Las primeras ~150 palabras suelen cubrir los primeros 10 segundos de un reel.
-      const transcript = video.transcript!;
-      const firstWords = transcript.split(/\s+/).slice(0, 150).join(" ");
-
       const genPrompt =
         `${formatBrief(format as "reel" | "youtube")}\n\n` +
         `--- VIDEO ORIGINAL (@${video.account_handle}, ${video.account_platform}) ---\n` +
@@ -200,17 +202,22 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
 
 // ─── Pipeline masivo: analizar y adaptar TODOS los videos en estado 'analysing' ──
 
-export async function processAnalysingVideos(limit = 3): Promise<{ processed: number; errors: number }> {
+// Sin userId: todos los usuarios (worker de fondo). Con userId: solo los de
+// ese usuario (endpoints HTTP por-usuario, para no gastar el presupuesto de
+// otros usuarios como efecto colateral de un botón individual).
+export async function processAnalysingVideos(limit = 3, userId?: number): Promise<{ processed: number; errors: number }> {
+  const scope = userId !== undefined ? ` AND ca.user_id = ?` : ``;
+  const params = userId !== undefined ? [userId, limit] : [limit];
   const rows = db
     .prepare(
       `SELECT cv.id, ca.user_id
        FROM competitor_videos cv
        JOIN competitor_accounts ca ON ca.id = cv.account_id
-       WHERE cv.status = 'analysing'
+       WHERE cv.status = 'analysing'${scope}
        ORDER BY cv.fetched_at ASC
        LIMIT ?`
     )
-    .all(limit) as { id: number; user_id: number }[];
+    .all(...(params as never[])) as { id: number; user_id: number }[];
 
   let processed = 0, errors = 0;
   for (const { id, user_id } of rows) {

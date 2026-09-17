@@ -3,6 +3,7 @@ import { getUser } from "@/lib/auth";
 import { transcribePendingVideos } from "@/lib/whisper";
 import { processAnalysingVideos } from "@/lib/competitor-generate";
 import { db } from "@/lib/db";
+import { readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
   const user = getUser(req);
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  const { mode } = (await req.json().catch(() => ({}))) as { mode?: string };
+  const { mode } = await readJsonBody<{ mode?: string }>(req);
   if (!mode || !["transcribe", "full"].includes(mode)) {
     return NextResponse.json({ error: "mode debe ser 'transcribe' o 'full'" }, { status: 400 });
   }
@@ -34,15 +35,18 @@ export async function POST(req: NextRequest) {
 
   const result: Record<string, unknown> = { ok: true, mode };
 
-  // Fase 1: transcribir pendientes (hasta 8 por llamada para no agotar el timeout).
-  const transcribeResult = await transcribePendingVideos(8);
+  // Fase 1: transcribir pendientes DE ESTE USUARIO (hasta 8 por llamada para no
+  // agotar el timeout). Sin el userId, esto procesaría también los videos
+  // pendientes de CUALQUIER otro usuario, gastando su presupuesto/claves.
+  const transcribeResult = await transcribePendingVideos(8, user.id);
   result.transcribed = transcribeResult.processed;
   result.transcribeErrors = transcribeResult.errors;
   result.noKey = transcribeResult.noKey > 0;
 
-  // Fase 2 (solo mode "full"): analizar transcritos + generar guiones adaptados.
+  // Fase 2 (solo mode "full"): analizar transcritos + generar guiones adaptados,
+  // también acotado a este usuario.
   if (mode === "full") {
-    const analyseResult = await processAnalysingVideos(10);
+    const analyseResult = await processAnalysingVideos(10, user.id);
     result.analysed = analyseResult.processed;
     result.analyseErrors = analyseResult.errors;
   }

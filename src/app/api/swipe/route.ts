@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addSwipe, deleteSwipe, listSwipe } from "@/lib/brand";
 import { getUser } from "@/lib/auth";
+import { readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +14,13 @@ export function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = getUser(req);
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-  const b = (await req.json().catch(() => ({}))) as {
+  const b = await readJsonBody<{
     title?: string;
     platform?: string;
     author?: string;
     content?: string;
     why?: string;
-  };
+  }>(req);
   if (!b.title?.trim() || !b.content?.trim()) {
     return NextResponse.json({ error: "Faltan título o contenido" }, { status: 400 });
   }

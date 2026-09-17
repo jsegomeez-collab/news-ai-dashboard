@@ -26,6 +26,13 @@ function verifyPassword(pw: string, stored: string): boolean {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+// Hash "de relleno" con la misma forma que uno real (mismo largo de salt/hash),
+// usado únicamente para que authenticate() tarde lo mismo con un email que
+// no existe que con uno que sí — si no, la ausencia del costoso scryptSync
+// en el camino "no existe" es una diferencia de tiempo medible que permite
+// enumerar qué emails tienen cuenta en /api/auth/login.
+const DUMMY_HASH = `${"0".repeat(32)}:${"0".repeat(128)}`;
+
 function ensureSettings(userId: number): void {
   db.prepare(
     `INSERT INTO user_settings(user_id, updated_at) VALUES(?, ?)
@@ -54,7 +61,8 @@ export function authenticate(email: string, password: string): User | null {
     .get(email.trim().toLowerCase()) as
     | { id: number; email: string; name: string | null; password_hash: string }
     | undefined;
-  if (!row || !verifyPassword(password, row.password_hash)) return null;
+  const ok = verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
+  if (!row || !ok) return null;
   ensureSettings(row.id);
   return toUser(row);
 }
