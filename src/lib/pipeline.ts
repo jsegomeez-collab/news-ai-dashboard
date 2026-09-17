@@ -10,6 +10,7 @@ import { transcribePendingVideos, type TranscribeResult } from "./whisper";
 import { processAnalysingVideos } from "./competitor-generate";
 import { pruneStaleTranscribedVideos } from "./competitor";
 import { recordHeartbeat } from "./heartbeat";
+import { pollHeygenRenders, triggerApprovedScripts } from "./heygen-generate";
 
 // Usuarios que tienen una clave de Anthropic configurada.
 export function activeUserIds(): number[] {
@@ -89,17 +90,24 @@ async function classifyOne(userId: number, articleId: number): Promise<void> {
 // y generar para este usuario. La generación respeta auto/ventana/topes.
 export async function runUserCycle(
   userId: number
-): Promise<{ ok: boolean; inserted: number; classified: number; generated: number; error?: string }> {
+): Promise<{ ok: boolean; inserted: number; classified: number; generated: number; heygenQueued: number; error?: string }> {
   try {
     const poll = await pollAllSources();
     await pollClassifyBatches(userId);
     const c = await classifyPending(userId);
     const g = await processGenQueue(userId);
-    return { ok: true, inserted: poll.inserted, classified: c.count, generated: g.generated };
+    await pollHeygenRenders(userId);
+    const hg = await triggerApprovedScripts(userId).catch((e) => {
+      console.warn(`[cycle] u${userId} HeyGen:`, (e as Error).message);
+      return { queued: 0, capped: 0 };
+    });
+    return { ok: true, inserted: poll.inserted, classified: c.count, generated: g.generated, heygenQueued: hg.queued };
   } catch (e) {
-    return { ok: false, inserted: 0, classified: 0, generated: 0, error: (e as Error).message };
+    return { ok: false, inserted: 0, classified: 0, generated: 0, heygenQueued: 0, error: (e as Error).message };
   }
 }
+
+export type HeygenCycleResult = { checked: number; completed: number; errors: number; queued: number; capped: number };
 
 export type CycleSummary = {
   ok: boolean;
@@ -111,16 +119,28 @@ export type CycleSummary = {
   generated: number;
   competitor: CompetitorPollResult | null;
   transcribed: TranscribeResult | null;
+  heygen: HeygenCycleResult;
 };
 
 // Un ciclo completo: fetch GLOBAL + competencia (descubrimiento + transcripción) + por usuario (clasificar/generar).
 export async function runCycle(): Promise<CycleSummary> {
-  const base: CycleSummary = { ok: true, fetched: 0, inserted: 0, users: 0, classified: 0, generated: 0, competitor: null, transcribed: null };
+  const base: CycleSummary = {
+    ok: true,
+    fetched: 0,
+    inserted: 0,
+    users: 0,
+    classified: 0,
+    generated: 0,
+    competitor: null,
+    transcribed: null,
+    heygen: { checked: 0, completed: 0, errors: 0, queued: 0, capped: 0 },
+  };
   // Si el descubrimiento de competencia entero revienta (accountsDue()/DB, no
   // un fallo por-cuenta que ya se traga internamente), lo marcamos aparte:
   // el resto del ciclo (noticias/clasificación/guiones) puede seguir yendo
   // bien y ocultar por completo que la mitad "espionaje" está caída.
   let competitorOk = true;
+  let heygenOk = true;
   try {
     // Fase 1: noticias + descubrimiento de competencia en paralelo.
     const [poll, competitor] = await Promise.all([
@@ -194,6 +214,28 @@ export async function runCycle(): Promise<CycleSummary> {
         console.warn(`[cycle] u${userId}:`, (e as Error).message);
       }
     }
+
+    // Fase 5: clonación con IA (HeyGen) — sondea los vídeos en curso y lanza
+    // los guiones recién aprobados, por usuario (mismo motivo que el análisis
+    // de competencia: no dejar que uno con muchos guiones aprobados acapare el
+    // ciclo y deje a los demás sin comprobar).
+    for (const userId of users) {
+      try {
+        const p = await pollHeygenRenders(userId);
+        base.heygen.checked += p.checked;
+        base.heygen.completed += p.completed;
+        base.heygen.errors += p.errors;
+        if (p.errors > 0) heygenOk = false;
+
+        const t = await triggerApprovedScripts(userId);
+        base.heygen.queued += t.queued;
+        base.heygen.capped += t.capped;
+      } catch (e) {
+        console.warn(`[cycle] u${userId} HeyGen:`, (e as Error).message);
+        heygenOk = false;
+      }
+    }
+
     recordHeartbeat({
       ok: true,
       fetched: base.fetched,
@@ -205,6 +247,10 @@ export async function runCycle(): Promise<CycleSummary> {
       competitorInserted: base.competitor?.inserted ?? 0,
       transcribedProcessed: base.transcribed?.processed ?? 0,
       transcribedErrors: base.transcribed?.errors ?? 0,
+      heygenOk,
+      heygenChecked: base.heygen.checked,
+      heygenCompleted: base.heygen.completed,
+      heygenErrors: base.heygen.errors,
     });
     return base;
   } catch (e) {
@@ -221,6 +267,10 @@ export async function runCycle(): Promise<CycleSummary> {
       competitorInserted: failed.competitor?.inserted ?? 0,
       transcribedProcessed: failed.transcribed?.processed ?? 0,
       transcribedErrors: failed.transcribed?.errors ?? 0,
+      heygenOk,
+      heygenChecked: failed.heygen.checked,
+      heygenCompleted: failed.heygen.completed,
+      heygenErrors: failed.heygen.errors,
     });
     return failed;
   }

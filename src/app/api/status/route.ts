@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { budgetState } from "@/lib/budget";
+import { heygenBudgetState } from "@/lib/heygenUsage";
 import { stats } from "@/lib/queries";
 import { getBrandDocs } from "@/lib/brand";
 import { readUserSettings, withinGenerationWindow } from "@/lib/settings";
@@ -32,6 +33,7 @@ export function GET(req: NextRequest) {
     db: dbInfo(),
     worker,
     budget: budgetState(user.id),
+    heygenBudget: heygenBudgetState(user.id),
     stats: stats(user.id),
     knowledge: { hasBases, hasTono: !!(docs["tonalidad"] ?? "").trim() },
     window: { active: withinGenerationWindow(s), minutes: s.windowMinutes, intervalHours: s.windowIntervalHours },

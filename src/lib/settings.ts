@@ -14,6 +14,18 @@ export type UserSettings = {
   windowMinutes: number;
   windowIntervalHours: number;
   competitorAdaptLimit: number; // guiones de competencia adaptados como máximo por día (UTC). 0 = sin tope.
+  // Clonación con IA (HeyGen): avatar_id/voice_id elegidos de la cuenta del
+  // usuario. avatarKind distingue "avatar" (Studio/Instant) de "talking_photo"
+  // (Photo Avatar / Avatar IV) porque HeyGen los genera con formas de petición
+  // distintas. heygenDailyUsdCap es su propio tope, separado del de Anthropic
+  // (0 = sin tope), porque el coste por vídeo es de otro orden de magnitud.
+  heygenKey: string;
+  heygenAvatarId: string;
+  heygenAvatarKind: "avatar" | "talking_photo" | "";
+  heygenAvatarLabel: string;
+  heygenVoiceId: string;
+  heygenVoiceLabel: string;
+  heygenDailyUsdCap: number;
 };
 
 // Versión de UserSettings segura para mandar al navegador: las claves reales
@@ -22,19 +34,21 @@ export type UserSettings = {
 // type="password", devolverlas en el JSON las deja visibles en la pestaña
 // Red y en React DevTools sin que haga falta ni un XSS. Solo se manda si
 // cada una está configurada (booleano) — cero bytes del valor real.
-export type SafeUserSettings = Omit<UserSettings, "anthropicKey" | "openaiKey" | "apifyToken"> & {
+export type SafeUserSettings = Omit<UserSettings, "anthropicKey" | "openaiKey" | "apifyToken" | "heygenKey"> & {
   hasAnthropicKey: boolean;
   hasOpenaiKey: boolean;
   hasApifyToken: boolean;
+  hasHeygenKey: boolean;
 };
 
 export function toSafeSettings(s: UserSettings): SafeUserSettings {
-  const { anthropicKey, openaiKey, apifyToken, ...rest } = s;
+  const { anthropicKey, openaiKey, apifyToken, heygenKey, ...rest } = s;
   return {
     ...rest,
     hasAnthropicKey: anthropicKey.startsWith("sk-ant-"),
     hasOpenaiKey: !!openaiKey,
     hasApifyToken: !!apifyToken,
+    hasHeygenKey: !!heygenKey,
   };
 }
 
@@ -52,6 +66,13 @@ type Row = {
   window_minutes: number;
   window_interval_hours: number;
   competitor_adapt_limit: number;
+  heygen_key: string;
+  heygen_avatar_id: string;
+  heygen_avatar_kind: string;
+  heygen_avatar_label: string;
+  heygen_voice_id: string;
+  heygen_voice_label: string;
+  heygen_daily_usd_cap: number;
 };
 
 function ensure(userId: number): void {
@@ -80,6 +101,13 @@ export function readUserSettings(userId: number): UserSettings {
     windowMinutes: r.window_minutes,
     windowIntervalHours: r.window_interval_hours,
     competitorAdaptLimit: r.competitor_adapt_limit,
+    heygenKey: r.heygen_key ?? "",
+    heygenAvatarId: r.heygen_avatar_id ?? "",
+    heygenAvatarKind: (r.heygen_avatar_kind === "avatar" || r.heygen_avatar_kind === "talking_photo") ? r.heygen_avatar_kind : "",
+    heygenAvatarLabel: r.heygen_avatar_label ?? "",
+    heygenVoiceId: r.heygen_voice_id ?? "",
+    heygenVoiceLabel: r.heygen_voice_label ?? "",
+    heygenDailyUsdCap: r.heygen_daily_usd_cap,
   };
 }
 
@@ -99,6 +127,13 @@ export function writeUserSettings(userId: number, p: Partial<UserSettings>): Use
     ["windowMinutes", "window_minutes", (v) => clampInt(v, 0, 1440)],
     ["windowIntervalHours", "window_interval_hours", (v) => clampInt(v, 0, 24)],
     ["competitorAdaptLimit", "competitor_adapt_limit", (v) => clampInt(v, 0, 500)],
+    ["heygenKey", "heygen_key", (v) => String(v ?? "").trim()],
+    ["heygenAvatarId", "heygen_avatar_id", (v) => String(v ?? "").trim()],
+    ["heygenAvatarKind", "heygen_avatar_kind", (v) => (v === "avatar" || v === "talking_photo" ? v : "")],
+    ["heygenAvatarLabel", "heygen_avatar_label", (v) => String(v ?? "").trim()],
+    ["heygenVoiceId", "heygen_voice_id", (v) => String(v ?? "").trim()],
+    ["heygenVoiceLabel", "heygen_voice_label", (v) => String(v ?? "").trim()],
+    ["heygenDailyUsdCap", "heygen_daily_usd_cap", (v) => Math.max(0, Number(v) || 0)],
   ];
   for (const [key, col, fn] of map) {
     if (p[key] !== undefined) {

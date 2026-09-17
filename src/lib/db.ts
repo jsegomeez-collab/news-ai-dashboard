@@ -398,6 +398,39 @@ CREATE TABLE IF NOT EXISTS worker_heartbeat (
   transcribed_processed INTEGER NOT NULL DEFAULT 0,
   transcribed_errors    INTEGER NOT NULL DEFAULT 0
 );
+
+-- ===== CLONACIÓN CON IA (HeyGen): un guion aprobado -> un vídeo con tu avatar =====
+-- Una fila por guion (script o competitor_script) que ha entrado alguna vez al
+-- pipeline de HeyGen. UNIQUE(source_type, source_id) porque un mismo guion no
+-- debe generar dos vídeos en paralelo si el ciclo automático lo revisa dos veces.
+CREATE TABLE IF NOT EXISTS heygen_renders (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_type     TEXT NOT NULL,   -- 'script' | 'competitor_script'
+  source_id       INTEGER NOT NULL,
+  heygen_video_id TEXT,
+  status          TEXT NOT NULL DEFAULT 'processing', -- processing|completed|error
+  video_path      TEXT,
+  duration_sec    REAL,
+  cost_usd        REAL,
+  error_msg       TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  UNIQUE(source_type, source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_heygen_renders_user   ON heygen_renders(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_heygen_renders_status ON heygen_renders(status);
+
+-- Gasto de HeyGen por día y usuario, separado de usage_log (que es solo Anthropic)
+-- porque tiene su propio tope diario configurable en Ajustes.
+CREATE TABLE IF NOT EXISTS heygen_usage_log (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day         TEXT NOT NULL,
+  videos      INTEGER NOT NULL DEFAULT 0,
+  seconds     REAL NOT NULL DEFAULT 0,
+  cost_usd    REAL NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
 `);
 
   // Columnas añadidas en versiones posteriores. Usamos PRAGMA para no depender
@@ -459,10 +492,34 @@ CREATE TABLE IF NOT EXISTS worker_heartbeat (
     ["competitor_inserted", "INTEGER NOT NULL DEFAULT 0"],
     ["transcribed_processed", "INTEGER NOT NULL DEFAULT 0"],
     ["transcribed_errors", "INTEGER NOT NULL DEFAULT 0"],
+    // Mismo motivo que competitor_ok: si HeyGen empieza a fallar (clave revocada,
+    // avatar borrado...) el resto del ciclo sigue yendo bien y lo esconde.
+    ["heygen_ok", "INTEGER NOT NULL DEFAULT 1"],
+    ["heygen_checked", "INTEGER NOT NULL DEFAULT 0"],
+    ["heygen_completed", "INTEGER NOT NULL DEFAULT 0"],
+    ["heygen_errors", "INTEGER NOT NULL DEFAULT 0"],
   ] as const) {
     if (!hcols.some((c) => c.name === col)) {
       r.exec(`ALTER TABLE worker_heartbeat ADD COLUMN ${col} ${def}`);
       console.log(`[db] columna ${col} añadida a worker_heartbeat`);
+    }
+  }
+
+  // Configuración de HeyGen por usuario: clave, avatar/voz elegidos (guardamos
+  // también la etiqueta legible para no tener que volver a llamar a HeyGen solo
+  // para pintar el nombre en Ajustes) y su propio tope de gasto diario.
+  for (const [col, def] of [
+    ["heygen_key", "TEXT NOT NULL DEFAULT ''"],
+    ["heygen_avatar_id", "TEXT NOT NULL DEFAULT ''"],
+    ["heygen_avatar_kind", "TEXT NOT NULL DEFAULT ''"], // 'avatar' | 'talking_photo'
+    ["heygen_avatar_label", "TEXT NOT NULL DEFAULT ''"],
+    ["heygen_voice_id", "TEXT NOT NULL DEFAULT ''"],
+    ["heygen_voice_label", "TEXT NOT NULL DEFAULT ''"],
+    ["heygen_daily_usd_cap", "REAL NOT NULL DEFAULT 10"],
+  ] as const) {
+    if (!cols.some((c) => c.name === col)) {
+      r.exec(`ALTER TABLE user_settings ADD COLUMN ${col} ${def}`);
+      console.log(`[db] columna ${col} añadida a user_settings`);
     }
   }
 }

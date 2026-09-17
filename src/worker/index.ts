@@ -39,6 +39,16 @@ function describeTranscription(trans: Awaited<ReturnType<typeof runCycle>>["tran
   return "";
 }
 
+function describeHeygen(hg: Awaited<ReturnType<typeof runCycle>>["heygen"]): string {
+  if (hg.queued === 0 && hg.completed === 0 && hg.errors === 0 && hg.capped === 0) return "";
+  const parts = [];
+  if (hg.queued > 0) parts.push(`+${hg.queued} lanzados`);
+  if (hg.completed > 0) parts.push(`${hg.completed} listos`);
+  if (hg.errors > 0) parts.push(`${hg.errors} con error`);
+  if (hg.capped > 0) parts.push(`${hg.capped} en espera por tope`);
+  return ` · heygen: ${parts.join(", ")}`;
+}
+
 async function cycle(): Promise<void> {
   console.log(`\n[${ts()}] ▶ ciclo iniciado`);
   const r = await runCycle();
@@ -47,7 +57,7 @@ async function cycle(): Promise<void> {
   console.log(
     `[${ts()}] ✔ noticias: ${r.inserted}/${r.fetched} · ` +
       `u${r.users} · clasif: ${r.classified} · guiones: ${r.generated}` +
-      `${describeCompetitor(r.competitor)}${describeTranscription(r.transcribed)}`
+      `${describeCompetitor(r.competitor)}${describeTranscription(r.transcribed)}${describeHeygen(r.heygen)}`
   );
 }
 

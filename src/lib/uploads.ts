@@ -1,4 +1,4 @@
-import { mkdirSync, createWriteStream, unlinkSync, existsSync, statSync } from "node:fs";
+import { mkdirSync, createWriteStream, writeFileSync, unlinkSync, existsSync, statSync } from "node:fs";
 import { join, dirname, extname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { dbInfo } from "./db";
@@ -70,6 +70,17 @@ export async function saveUpload(file: File, subdir = "uploads"): Promise<{ path
     ws.end(buf);
   });
   return { path, size: statSync(path).size };
+}
+
+// Igual que saveUpload, pero para bytes que ya tenemos en memoria (el vídeo
+// descargado de HeyGen vía fetch, no un File subido desde el navegador).
+export function saveBuffer(buf: Buffer, originalName: string, subdir = "uploads"): { path: string; size: number } {
+  const dir = uploadsDir(subdir);
+  const ext = extname(originalName) || "";
+  const name = `${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
+  const path = join(dir, name);
+  writeFileSync(path, buf);
+  return { path, size: buf.length };
 }
 
 export function deleteUploadIfExists(path: string | null): void {

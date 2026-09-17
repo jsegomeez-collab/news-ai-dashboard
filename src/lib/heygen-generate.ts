@@ -1,0 +1,221 @@
+import { db } from "./db";
+import { readUserSettings } from "./settings";
+import { buildScriptText } from "./scriptText";
+import { saveBuffer } from "./uploads";
+import { heygenBudgetState, recordHeygenUsage } from "./heygenUsage";
+import { createAvatarVideo, getVideoStatus, estimateCostFromText, HEYGEN_PRICE_PER_SEC } from "./heygen";
+
+export type SourceType = "script" | "competitor_script";
+
+type SourceRow = {
+  id: number;
+  user_id: number;
+  title: string | null;
+  hook: string | null;
+  puente: string | null;
+  body: string | null;
+  cta: string | null;
+  status: string;
+};
+
+// scripts (guiones de noticias) no tiene columna 'puente' (eso es solo de los
+// adaptados de competencia) — se pide como NULL literal para que ambas ramas
+// devuelvan la misma forma de fila.
+function getSource(userId: number, type: SourceType, id: number): SourceRow | null {
+  const sql =
+    type === "script"
+      ? `SELECT id, user_id, title, hook, NULL as puente, body, cta, status FROM scripts WHERE id = ? AND user_id = ?`
+      : `SELECT id, user_id, title, hook, puente, body, cta, status FROM competitor_scripts WHERE id = ? AND user_id = ?`;
+  return (db.prepare(sql).get(id, userId) as SourceRow | undefined) ?? null;
+}
+
+export type HeygenRender = {
+  id: number;
+  user_id: number;
+  source_type: SourceType;
+  source_id: number;
+  heygen_video_id: string | null;
+  status: "processing" | "completed" | "error";
+  video_path: string | null;
+  duration_sec: number | null;
+  cost_usd: number | null;
+  error_msg: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export function getRender(userId: number, type: SourceType, id: number): HeygenRender | null {
+  return (
+    (db
+      .prepare(`SELECT * FROM heygen_renders WHERE user_id = ? AND source_type = ? AND source_id = ?`)
+      .get(userId, type, id) as HeygenRender | undefined) ?? null
+  );
+}
+
+function upsertRenderProcessing(userId: number, type: SourceType, id: number, heygenVideoId: string): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO heygen_renders(user_id, source_type, source_id, heygen_video_id, status, created_at, updated_at)
+     VALUES(?, ?, ?, ?, 'processing', ?, ?)
+     ON CONFLICT(source_type, source_id) DO UPDATE SET
+       heygen_video_id = excluded.heygen_video_id, status = 'processing', error_msg = NULL, updated_at = excluded.updated_at`
+  ).run(userId, type, id, heygenVideoId, now, now);
+}
+
+// Solo se llega aquí con status previo 'error' (nunca 'completed'/'processing',
+// queueAvatarVideo los descarta antes) — por eso no hace falta borrar un
+// video_path anterior: un render en error nunca llegó a tener archivo guardado.
+function markRenderError(type: SourceType, id: number, msg: string): void {
+  db.prepare(
+    `UPDATE heygen_renders SET status = 'error', error_msg = ?, updated_at = ? WHERE source_type = ? AND source_id = ?`
+  ).run(msg.slice(0, 500), new Date().toISOString(), type, id);
+}
+
+function markRenderCompleted(type: SourceType, id: number, videoPath: string, durationSec: number, costUsd: number): void {
+  db.prepare(
+    `UPDATE heygen_renders SET status = 'completed', video_path = ?, duration_sec = ?, cost_usd = ?, error_msg = NULL, updated_at = ?
+     WHERE source_type = ? AND source_id = ?`
+  ).run(videoPath, durationSec, costUsd, new Date().toISOString(), type, id);
+}
+
+// Lanza la generación de UN guion concreto en HeyGen. Idempotente: si ya hay
+// un render en curso o completado para ese guion, no relanza nada.
+export async function queueAvatarVideo(
+  userId: number,
+  type: SourceType,
+  id: number
+): Promise<{ ok: boolean; error?: string; capped?: boolean }> {
+  const existing = getRender(userId, type, id);
+  if (existing && (existing.status === "processing" || existing.status === "completed")) {
+    return { ok: true };
+  }
+
+  const settings = readUserSettings(userId);
+  if (!settings.heygenKey || !settings.heygenAvatarId || !settings.heygenVoiceId) {
+    return { ok: false, error: "Configura tu clave, avatar y voz de HeyGen en Ajustes." };
+  }
+
+  const source = getSource(userId, type, id);
+  if (!source) return { ok: false, error: "Guion no encontrado" };
+
+  const text = buildScriptText(source);
+  if (!text.trim()) return { ok: false, error: "Guion vacío" };
+
+  // Chequeo PREVIO por estimación (la duración/coste real solo se sabe al
+  // terminar) — evita lanzar un vídeo que ya sabemos que se saldría del tope.
+  const budget = heygenBudgetState(userId);
+  const estimate = estimateCostFromText(text);
+  if (!budget.canGenerate || (budget.maxUsd > 0 && budget.costToday + estimate > budget.maxUsd)) {
+    return { ok: false, capped: true, error: budget.reason ?? "Tope diario de gasto en HeyGen alcanzado" };
+  }
+
+  try {
+    const videoId = await createAvatarVideo(settings.heygenKey, {
+      avatarId: settings.heygenAvatarId,
+      avatarKind: settings.heygenAvatarKind || "avatar",
+      voiceId: settings.heygenVoiceId,
+      text,
+    });
+    upsertRenderProcessing(userId, type, id, videoId);
+    return { ok: true };
+  } catch (e) {
+    markRenderError(type, id, (e as Error).message);
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Sondea los renders en curso (mismo patrón que pollClassifyBatches /
+// transcribePendingVideos: lanzar -> sondear en el ciclo siguiente -> guardar
+// al terminar). Descarga el mp4 en cuanto HeyGen lo da por completado, porque
+// su URL de descarga no es necesariamente estable a largo plazo.
+export async function pollHeygenRenders(userId?: number): Promise<{ checked: number; completed: number; errors: number }> {
+  const scope = userId !== undefined ? ` AND user_id = ?` : ``;
+  const params = userId !== undefined ? [userId] : [];
+  const rows = db
+    .prepare(
+      `SELECT id, user_id, source_type, source_id, heygen_video_id
+       FROM heygen_renders WHERE status = 'processing'${scope}`
+    )
+    .all(...(params as never[])) as {
+    id: number;
+    user_id: number;
+    source_type: SourceType;
+    source_id: number;
+    heygen_video_id: string;
+  }[];
+
+  let checked = 0,
+    completed = 0,
+    errors = 0;
+
+  for (const r of rows) {
+    const settings = readUserSettings(r.user_id);
+    if (!settings.heygenKey) continue; // clave borrada entretanto: se revisa si vuelve a configurarse
+    checked++;
+    try {
+      const st = await getVideoStatus(settings.heygenKey, r.heygen_video_id);
+      if (st.status === "completed" && st.videoUrl) {
+        const resp = await fetch(st.videoUrl, { signal: AbortSignal.timeout(180_000) });
+        if (!resp.ok) throw new Error(`descarga HTTP ${resp.status}`);
+        const buf = Buffer.from(await resp.arrayBuffer());
+        const saved = saveBuffer(buf, `heygen-${r.source_type}-${r.source_id}.mp4`, "heygen");
+        const durationSec = st.durationSec ?? 0;
+        const costUsd = durationSec * HEYGEN_PRICE_PER_SEC;
+        markRenderCompleted(r.source_type, r.source_id, saved.path, durationSec, costUsd);
+        recordHeygenUsage(r.user_id, durationSec, costUsd);
+        completed++;
+      } else if (st.status === "failed") {
+        markRenderError(r.source_type, r.source_id, st.error ?? "HeyGen devolvió 'failed'");
+        errors++;
+      }
+      // pending/processing: se vuelve a comprobar en el próximo ciclo.
+    } catch (e) {
+      console.warn(`[heygen] render ${r.id} (${r.source_type} ${r.source_id}):`, (e as Error).message);
+      markRenderError(r.source_type, r.source_id, (e as Error).message);
+      errors++;
+    }
+  }
+  return { checked, completed, errors };
+}
+
+// Dispara la generación automática: todo guion (de noticias o adaptado de
+// competencia — comparten el mismo status 'aprobado' de status.ts) que acaba
+// de aprobarse y que todavía no tiene ningún render asociado. Se detiene en
+// cuanto el tope diario salta, dejando el resto para el próximo ciclo.
+export async function triggerApprovedScripts(userId: number): Promise<{ queued: number; capped: number }> {
+  const settings = readUserSettings(userId);
+  if (!settings.heygenKey || !settings.heygenAvatarId || !settings.heygenVoiceId) return { queued: 0, capped: 0 };
+
+  const pending: { type: SourceType; id: number }[] = [
+    ...(
+      db
+        .prepare(
+          `SELECT s.id FROM scripts s
+           LEFT JOIN heygen_renders hr ON hr.source_type = 'script' AND hr.source_id = s.id
+           WHERE s.user_id = ? AND s.status = 'aprobado' AND hr.id IS NULL`
+        )
+        .all(userId) as { id: number }[]
+    ).map((r) => ({ type: "script" as const, id: r.id })),
+    ...(
+      db
+        .prepare(
+          `SELECT cs.id FROM competitor_scripts cs
+           LEFT JOIN heygen_renders hr ON hr.source_type = 'competitor_script' AND hr.source_id = cs.id
+           WHERE cs.user_id = ? AND cs.status = 'aprobado' AND hr.id IS NULL`
+        )
+        .all(userId) as { id: number }[]
+    ).map((r) => ({ type: "competitor_script" as const, id: r.id })),
+  ];
+
+  let queued = 0,
+    capped = 0;
+  for (const { type, id } of pending) {
+    const r = await queueAvatarVideo(userId, type, id);
+    if (r.capped) {
+      capped++;
+      break; // tope alcanzado: el resto queda pendiente para el siguiente ciclo
+    }
+    if (r.ok) queued++;
+  }
+  return { queued, capped };
+}

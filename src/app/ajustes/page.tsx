@@ -16,13 +16,23 @@ type Settings = {
   windowMinutes: number;
   windowIntervalHours: number;
   competitorAdaptLimit: number;
+  hasHeygenKey: boolean;
+  heygenAvatarId: string;
+  heygenAvatarKind: "avatar" | "talking_photo" | "";
+  heygenAvatarLabel: string;
+  heygenVoiceId: string;
+  heygenVoiceLabel: string;
+  heygenDailyUsdCap: number;
 };
 type ModelOption = { id: string; label: string };
 type Status = {
   hasKey: boolean;
   budget: { scriptsToday: number; costToday: number; maxScripts: number; maxUsd: number };
+  heygenBudget: { videosToday: number; costToday: number; maxUsd: number };
   stats: { articles: number; classified: number; scripts: number; queuePending: number };
 };
+type HeygenAvatarOption = { id: string; kind: "avatar" | "talking_photo"; label: string; previewUrl: string | null };
+type HeygenVoiceOption = { id: string; label: string; language: string | null };
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -49,6 +59,12 @@ export default function AjustesPage() {
   const [savedOaiKey, setSavedOaiKey] = useState(false);
   const [apifyInput, setApifyInput] = useState("");
   const [savedApify, setSavedApify] = useState(false);
+  const [heygenKeyInput, setHeygenKeyInput] = useState("");
+  const [savedHeygenKey, setSavedHeygenKey] = useState(false);
+  const [heygenAvatars, setHeygenAvatars] = useState<HeygenAvatarOption[] | null>(null);
+  const [heygenVoices, setHeygenVoices] = useState<HeygenVoiceOption[] | null>(null);
+  const [heygenLoadError, setHeygenLoadError] = useState<string | null>(null);
+  const [loadingHeygen, setLoadingHeygen] = useState<"avatars" | "voices" | null>(null);
   const { data: status } = usePoll<Status>("/api/status", 15000);
 
   async function load() {
@@ -113,6 +129,43 @@ export default function AjustesPage() {
     setApifyInput("");
     setSavedApify(true);
     setTimeout(() => setSavedApify(false), 1500);
+  }
+  async function saveHeygenKey() {
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heygenKey: heygenKeyInput }),
+    });
+    const json = (await res.json()) as { settings: Settings };
+    setS(json.settings);
+    setHeygenKeyInput("");
+    setSavedHeygenKey(true);
+    setTimeout(() => setSavedHeygenKey(false), 1500);
+  }
+
+  async function loadHeygenAvatars() {
+    setLoadingHeygen("avatars");
+    setHeygenLoadError(null);
+    const res = await fetch("/api/heygen/avatars", { cache: "no-store" });
+    const json = (await res.json()) as { avatars?: HeygenAvatarOption[]; error?: string };
+    if (json.error) setHeygenLoadError(json.error);
+    else setHeygenAvatars(json.avatars ?? []);
+    setLoadingHeygen(null);
+  }
+  async function loadHeygenVoices() {
+    setLoadingHeygen("voices");
+    setHeygenLoadError(null);
+    const res = await fetch("/api/heygen/voices", { cache: "no-store" });
+    const json = (await res.json()) as { voices?: HeygenVoiceOption[]; error?: string };
+    if (json.error) setHeygenLoadError(json.error);
+    else setHeygenVoices(json.voices ?? []);
+    setLoadingHeygen(null);
+  }
+  function pickHeygenAvatar(a: HeygenAvatarOption) {
+    patch({ heygenAvatarId: a.id, heygenAvatarKind: a.kind, heygenAvatarLabel: a.label });
+  }
+  function pickHeygenVoice(v: HeygenVoiceOption) {
+    patch({ heygenVoiceId: v.id, heygenVoiceLabel: v.label });
   }
 
   if (!s) return <p className="text-sm text-zinc-500">Cargando…</p>;
@@ -199,6 +252,117 @@ export default function AjustesPage() {
         <p className="mt-2 text-xs text-zinc-600">
           Sin token, las cuentas de Instagram se omiten. YouTube y TikTok no lo necesitan.
         </p>
+      </Card>
+
+      <Card title={`🧑‍💻 HeyGen (clon con IA) ${savedHeygenKey ? "· guardada ✓" : s.hasHeygenKey ? "· configurada ✓" : ""}`}>
+        <p className="mb-2 text-sm text-zinc-400">
+          Cuando apruebas un guion, se genera automáticamente un vídeo con TU avatar clonado
+          leyéndolo. Consigue tu clave en{" "}
+          <a href="https://app.heygen.com/settings?nav=API" target="_blank" rel="noreferrer" className="text-brand hover:underline">
+            app.heygen.com (Ajustes → API)
+          </a>
+          . ~$4/min de vídeo generado — vigila el tope de abajo.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="password"
+            value={heygenKeyInput}
+            onChange={(e) => setHeygenKeyInput(e.target.value)}
+            placeholder={s.hasHeygenKey ? "•••••••••••• (escribe para cambiarla)" : "tu clave de HeyGen"}
+            className="flex-1 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand"
+          />
+          <button onClick={saveHeygenKey} className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white">
+            Guardar
+          </button>
+        </div>
+
+        {s.hasHeygenKey && (
+          <div className="mt-4 space-y-3 border-t border-edge/50 pt-3">
+            <div>
+              <div className="mb-1 flex items-center justify-between text-sm text-zinc-300">
+                <span>Avatar (tu clon)</span>
+                <button
+                  onClick={loadHeygenAvatars}
+                  disabled={loadingHeygen === "avatars"}
+                  className="text-xs text-brand hover:underline disabled:opacity-50"
+                >
+                  {loadingHeygen === "avatars" ? "Cargando…" : "Cargar mis avatares"}
+                </button>
+              </div>
+              {s.heygenAvatarId && (
+                <p className="mb-1 text-xs text-zinc-500">Elegido: {s.heygenAvatarLabel || s.heygenAvatarId}</p>
+              )}
+              {heygenAvatars && (
+                <select
+                  value={s.heygenAvatarId}
+                  onChange={(e) => {
+                    const a = heygenAvatars.find((x) => x.id === e.target.value);
+                    if (a) pickHeygenAvatar(a);
+                  }}
+                  className="w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200"
+                >
+                  <option value="">— elige un avatar —</option>
+                  {heygenAvatars.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label} {a.kind === "talking_photo" ? "(foto)" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <div className="mb-1 flex items-center justify-between text-sm text-zinc-300">
+                <span>Voz</span>
+                <button
+                  onClick={loadHeygenVoices}
+                  disabled={loadingHeygen === "voices"}
+                  className="text-xs text-brand hover:underline disabled:opacity-50"
+                >
+                  {loadingHeygen === "voices" ? "Cargando…" : "Cargar mis voces"}
+                </button>
+              </div>
+              {s.heygenVoiceId && (
+                <p className="mb-1 text-xs text-zinc-500">Elegida: {s.heygenVoiceLabel || s.heygenVoiceId}</p>
+              )}
+              {heygenVoices && (
+                <select
+                  value={s.heygenVoiceId}
+                  onChange={(e) => {
+                    const v = heygenVoices.find((x) => x.id === e.target.value);
+                    if (v) pickHeygenVoice(v);
+                  }}
+                  className="w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200"
+                >
+                  <option value="">— elige una voz —</option>
+                  {heygenVoices.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {heygenLoadError && <p className="text-xs text-red-400">{heygenLoadError}</p>}
+
+            <label className="block text-sm text-zinc-300">
+              Tope de gasto HeyGen/día (USD, 0 = sin tope)
+              <input
+                inputMode="numeric"
+                value={String(s.heygenDailyUsdCap)}
+                onChange={(e) => patch({ heygenDailyUsdCap: num(e.target.value) })}
+                className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200"
+              />
+            </label>
+
+            {!s.heygenAvatarId || !s.heygenVoiceId ? (
+              <p className="text-xs text-amber-400/80">⚠️ Elige avatar y voz para activar la generación automática.</p>
+            ) : (
+              <p className="text-xs text-emerald-400/80">✓ Listo: los guiones que apruebes generarán vídeo automáticamente.</p>
+            )}
+          </div>
+        )}
       </Card>
 
       <Card title="Generación de guiones">
@@ -347,6 +511,30 @@ export default function AjustesPage() {
           <div className="h-2 rounded bg-edge">
             <div className="h-2 rounded bg-brand2" style={{ width: `${Math.min(100, (status.budget.scriptsToday / Math.max(status.budget.maxScripts, 1)) * 100)}%` }} />
           </div>
+        </Card>
+      )}
+
+      {status && s.hasHeygenKey && (
+        <Card title="Gasto de hoy en HeyGen">
+          <div className="mb-1 flex justify-between text-xs text-zinc-400">
+            <span>Coste</span>
+            <span>
+              ${status.heygenBudget.costToday.toFixed(2)}
+              {status.heygenBudget.maxUsd > 0 ? ` / $${status.heygenBudget.maxUsd.toFixed(2)}` : " (sin tope)"}
+            </span>
+          </div>
+          <div className="h-2 rounded bg-edge">
+            <div
+              className="h-2 rounded bg-amber-500"
+              style={{
+                width:
+                  status.heygenBudget.maxUsd > 0
+                    ? `${Math.min(100, (status.heygenBudget.costToday / status.heygenBudget.maxUsd) * 100)}%`
+                    : "0%",
+              }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-zinc-500">{status.heygenBudget.videosToday} vídeo(s) generado(s) hoy.</p>
         </Card>
       )}
 
