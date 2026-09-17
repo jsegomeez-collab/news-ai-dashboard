@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ["better-sqlite3"],
+  // better-sqlite3: mismo motivo de siempre (node:sqlite nativo). Los de
+  // Remotion: @remotion/bundler usa esbuild/@rspack internamente (binarios
+  // nativos) — si next build intenta empaquetarlos con SU webpack, revienta
+  // igual que node:sqlite lo haría sin el hueco de abajo.
+  serverExternalPackages: ["better-sqlite3", "@remotion/bundler", "@remotion/renderer", "@remotion/captions"],
   webpack: (config) => {
     // node:sqlite es un built-in de Node.js 22+ — hay que externalizarlo manualmente.
     config.externals = [...(config.externals ?? []), { "node:sqlite": "node:sqlite" }];

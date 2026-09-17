@@ -53,15 +53,21 @@ export function safeMediaContentType(mime: string | null | undefined): { content
   return { contentType: "application/octet-stream", inline: false };
 }
 
-// Guarda el archivo subido con un nombre único (no el original, para no
-// colisionar ni depender de que el nombre venga "limpio") y devuelve la ruta
-// absoluta guardada en la BD.
-export async function saveUpload(file: File, subdir = "uploads"): Promise<{ path: string; size: number }> {
+// Nombre único (no el original, para no colisionar ni depender de que venga
+// "limpio") dentro de `subdir`, sin escribir nada todavía — para cuando quien
+// genera el contenido final es otro proceso (p.ej. Remotion, que escribe
+// directamente en la ruta de salida que se le indique).
+export function newUploadPath(originalName: string, subdir = "uploads"): string {
   const dir = uploadsDir(subdir);
-  const ext = extname(file.name) || "";
+  const ext = extname(originalName) || "";
   const name = `${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
-  const path = join(dir, name);
+  return join(dir, name);
+}
 
+// Guarda el archivo subido con un nombre único y devuelve la ruta absoluta
+// guardada en la BD.
+export async function saveUpload(file: File, subdir = "uploads"): Promise<{ path: string; size: number }> {
+  const path = newUploadPath(file.name, subdir);
   const buf = Buffer.from(await file.arrayBuffer());
   await new Promise<void>((resolve, reject) => {
     const ws = createWriteStream(path);
@@ -75,10 +81,7 @@ export async function saveUpload(file: File, subdir = "uploads"): Promise<{ path
 // Igual que saveUpload, pero para bytes que ya tenemos en memoria (el vídeo
 // descargado de HeyGen vía fetch, no un File subido desde el navegador).
 export function saveBuffer(buf: Buffer, originalName: string, subdir = "uploads"): { path: string; size: number } {
-  const dir = uploadsDir(subdir);
-  const ext = extname(originalName) || "";
-  const name = `${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
-  const path = join(dir, name);
+  const path = newUploadPath(originalName, subdir);
   writeFileSync(path, buf);
   return { path, size: buf.length };
 }

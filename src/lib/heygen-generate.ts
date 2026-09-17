@@ -1,9 +1,13 @@
 import { db } from "./db";
 import { readUserSettings } from "./settings";
 import { buildScriptText } from "./scriptText";
-import { saveBuffer } from "./uploads";
+import { saveBuffer, newUploadPath, deleteUploadIfExists } from "./uploads";
 import { heygenBudgetState, recordHeygenUsage } from "./heygenUsage";
 import { createAvatarVideo, getVideoStatus, estimateCostFromText, HEYGEN_PRICE_PER_SEC } from "./heygen";
+import { isOpenAiKeyFormat } from "./whisper";
+import { transcribeWithWordTimestamps } from "./captions";
+import { createTikTokStyleCaptions } from "@remotion/captions";
+import { renderCaptionedVideo } from "./remotion-render";
 
 export type SourceType = "script" | "competitor_script";
 
@@ -16,6 +20,7 @@ type SourceRow = {
   body: string | null;
   cta: string | null;
   status: string;
+  format: string;
 };
 
 // scripts (guiones de noticias) no tiene columna 'puente' (eso es solo de los
@@ -24,9 +29,16 @@ type SourceRow = {
 function getSource(userId: number, type: SourceType, id: number): SourceRow | null {
   const sql =
     type === "script"
-      ? `SELECT id, user_id, title, hook, NULL as puente, body, cta, status FROM scripts WHERE id = ? AND user_id = ?`
-      : `SELECT id, user_id, title, hook, puente, body, cta, status FROM competitor_scripts WHERE id = ? AND user_id = ?`;
+      ? `SELECT id, user_id, title, hook, NULL as puente, body, cta, status, format FROM scripts WHERE id = ? AND user_id = ?`
+      : `SELECT id, user_id, title, hook, puente, body, cta, status, format FROM competitor_scripts WHERE id = ? AND user_id = ?`;
   return (db.prepare(sql).get(id, userId) as SourceRow | undefined) ?? null;
+}
+
+// Dimensiones de render según formato — HeyGen ya genera el vídeo en esta
+// misma proporción (ver createAvatarVideo), así que Remotion solo compone
+// subtítulos encima, sin recortar ni reencuadrar nada.
+function dimsForFormat(format: string): { widthPx: number; heightPx: number } {
+  return format === "youtube" ? { widthPx: 1920, heightPx: 1080 } : { widthPx: 1080, heightPx: 1920 };
 }
 
 export type HeygenRender = {
@@ -35,7 +47,10 @@ export type HeygenRender = {
   source_type: SourceType;
   source_id: number;
   heygen_video_id: string | null;
-  status: "processing" | "completed" | "error";
+  // processing: esperando a HeyGen. captioning: vídeo de HeyGen ya descargado,
+  // esperando transcripción (Whisper) + composición (Remotion). completed:
+  // vídeo final CON subtítulos, listo para usar.
+  status: "processing" | "captioning" | "completed" | "error";
   video_path: string | null;
   duration_sec: number | null;
   cost_usd: number | null;
@@ -71,11 +86,23 @@ function markRenderError(type: SourceType, id: number, msg: string): void {
   ).run(msg.slice(0, 500), new Date().toISOString(), type, id);
 }
 
-function markRenderCompleted(type: SourceType, id: number, videoPath: string, durationSec: number, costUsd: number): void {
+// El mp4 CRUDO de HeyGen ya está en disco, pero todavía le falta la pasada de
+// subtítulos — por eso pasa a 'captioning', no a 'completed'.
+function markRenderDownloaded(type: SourceType, id: number, videoPath: string, durationSec: number, costUsd: number): void {
   db.prepare(
-    `UPDATE heygen_renders SET status = 'completed', video_path = ?, duration_sec = ?, cost_usd = ?, error_msg = NULL, updated_at = ?
+    `UPDATE heygen_renders SET status = 'captioning', video_path = ?, duration_sec = ?, cost_usd = ?, error_msg = NULL, updated_at = ?
      WHERE source_type = ? AND source_id = ?`
   ).run(videoPath, durationSec, costUsd, new Date().toISOString(), type, id);
+}
+
+// video_path pasa a apuntar al vídeo FINAL (con subtítulos incrustados) — el
+// mp4 crudo de HeyGen ya se borró del disco en processCaptioning() antes de
+// llamar aquí, así que no queda ningún archivo intermedio huérfano.
+function markCaptioningDone(type: SourceType, id: number, finalVideoPath: string): void {
+  db.prepare(
+    `UPDATE heygen_renders SET status = 'completed', video_path = ?, error_msg = NULL, updated_at = ?
+     WHERE source_type = ? AND source_id = ?`
+  ).run(finalVideoPath, new Date().toISOString(), type, id);
 }
 
 // Lanza la generación de UN guion concreto en HeyGen. Idempotente: si ya hay
@@ -86,8 +113,8 @@ export async function queueAvatarVideo(
   id: number
 ): Promise<{ ok: boolean; error?: string; capped?: boolean }> {
   const existing = getRender(userId, type, id);
-  if (existing && (existing.status === "processing" || existing.status === "completed")) {
-    return { ok: true };
+  if (existing && existing.status !== "error") {
+    return { ok: true }; // processing / captioning / completed: ya en marcha o listo, no relanzar
   }
 
   const settings = readUserSettings(userId);
@@ -127,7 +154,7 @@ export async function queueAvatarVideo(
 // transcribePendingVideos: lanzar -> sondear en el ciclo siguiente -> guardar
 // al terminar). Descarga el mp4 en cuanto HeyGen lo da por completado, porque
 // su URL de descarga no es necesariamente estable a largo plazo.
-export async function pollHeygenRenders(userId?: number): Promise<{ checked: number; completed: number; errors: number }> {
+export async function pollHeygenRenders(userId?: number): Promise<{ checked: number; downloaded: number; errors: number }> {
   const scope = userId !== undefined ? ` AND user_id = ?` : ``;
   const params = userId !== undefined ? [userId] : [];
   const rows = db
@@ -144,7 +171,7 @@ export async function pollHeygenRenders(userId?: number): Promise<{ checked: num
   }[];
 
   let checked = 0,
-    completed = 0,
+    downloaded = 0,
     errors = 0;
 
   for (const r of rows) {
@@ -160,9 +187,9 @@ export async function pollHeygenRenders(userId?: number): Promise<{ checked: num
         const saved = saveBuffer(buf, `heygen-${r.source_type}-${r.source_id}.mp4`, "heygen");
         const durationSec = st.durationSec ?? 0;
         const costUsd = durationSec * HEYGEN_PRICE_PER_SEC;
-        markRenderCompleted(r.source_type, r.source_id, saved.path, durationSec, costUsd);
+        markRenderDownloaded(r.source_type, r.source_id, saved.path, durationSec, costUsd);
         recordHeygenUsage(r.user_id, durationSec, costUsd);
-        completed++;
+        downloaded++;
       } else if (st.status === "failed") {
         markRenderError(r.source_type, r.source_id, st.error ?? "HeyGen devolvió 'failed'");
         errors++;
@@ -174,7 +201,73 @@ export async function pollHeygenRenders(userId?: number): Promise<{ checked: num
       errors++;
     }
   }
-  return { checked, completed, errors };
+  return { checked, downloaded, errors };
+}
+
+// Segunda fase, tras la descarga: transcribe el mp4 crudo con timestamps por
+// palabra (Whisper) y compone los subtítulos encima con Remotion. Mismo
+// motivo que el resto del pipeline para no exigir la clave al lanzar el
+// vídeo: si el usuario todavía no configuró su clave de OpenAI (la misma que
+// ya usa para transcribir competencia), el render se queda en 'captioning' en
+// vez de fallar, y se retoma solo en el ciclo en que la configure.
+export async function processCaptioning(
+  userId?: number
+): Promise<{ checked: number; completed: number; errors: number; noKey: number }> {
+  const scope = userId !== undefined ? ` AND user_id = ?` : ``;
+  const params = userId !== undefined ? [userId] : [];
+  const rows = db
+    .prepare(
+      `SELECT id, user_id, source_type, source_id, video_path, duration_sec
+       FROM heygen_renders WHERE status = 'captioning' AND video_path IS NOT NULL${scope}`
+    )
+    .all(...(params as never[])) as {
+    id: number;
+    user_id: number;
+    source_type: SourceType;
+    source_id: number;
+    video_path: string;
+    duration_sec: number | null;
+  }[];
+
+  let checked = 0,
+    completed = 0,
+    errors = 0,
+    noKey = 0;
+
+  for (const r of rows) {
+    const settings = readUserSettings(r.user_id);
+    if (!isOpenAiKeyFormat(settings.openaiKey)) {
+      noKey++;
+      continue;
+    }
+    checked++;
+    try {
+      const source = getSource(r.user_id, r.source_type, r.source_id);
+      const { widthPx, heightPx } = dimsForFormat(source?.format ?? "reel");
+
+      const captions = await transcribeWithWordTimestamps(settings.openaiKey, r.video_path);
+      const { pages } = createTikTokStyleCaptions({ captions, combineTokensWithinMilliseconds: 1200 });
+
+      const outPath = newUploadPath(`captioned-${r.source_type}-${r.source_id}.mp4`, "heygen");
+      await renderCaptionedVideo({
+        videoPath: r.video_path,
+        pages,
+        durationInSeconds: r.duration_sec && r.duration_sec > 0 ? r.duration_sec : 30,
+        widthPx,
+        heightPx,
+        outPath,
+      });
+
+      deleteUploadIfExists(r.video_path); // el crudo de HeyGen ya no hace falta, solo ocupaba disco
+      markCaptioningDone(r.source_type, r.source_id, outPath);
+      completed++;
+    } catch (e) {
+      console.warn(`[heygen] subtítulos render ${r.id} (${r.source_type} ${r.source_id}):`, (e as Error).message);
+      markRenderError(r.source_type, r.source_id, (e as Error).message);
+      errors++;
+    }
+  }
+  return { checked, completed, errors, noKey };
 }
 
 // Dispara la generación automática: todo guion (de noticias o adaptado de

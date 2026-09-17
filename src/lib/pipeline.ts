@@ -10,7 +10,7 @@ import { transcribePendingVideos, type TranscribeResult } from "./whisper";
 import { processAnalysingVideos } from "./competitor-generate";
 import { pruneStaleTranscribedVideos } from "./competitor";
 import { recordHeartbeat } from "./heartbeat";
-import { pollHeygenRenders, triggerApprovedScripts } from "./heygen-generate";
+import { pollHeygenRenders, processCaptioning, triggerApprovedScripts } from "./heygen-generate";
 
 // Usuarios que tienen una clave de Anthropic configurada.
 export function activeUserIds(): number[] {
@@ -97,6 +97,7 @@ export async function runUserCycle(
     const c = await classifyPending(userId);
     const g = await processGenQueue(userId);
     await pollHeygenRenders(userId);
+    await processCaptioning(userId);
     const hg = await triggerApprovedScripts(userId).catch((e) => {
       console.warn(`[cycle] u${userId} HeyGen:`, (e as Error).message);
       return { queued: 0, capped: 0 };
@@ -215,17 +216,22 @@ export async function runCycle(): Promise<CycleSummary> {
       }
     }
 
-    // Fase 5: clonación con IA (HeyGen) — sondea los vídeos en curso y lanza
-    // los guiones recién aprobados, por usuario (mismo motivo que el análisis
-    // de competencia: no dejar que uno con muchos guiones aprobados acapare el
-    // ciclo y deje a los demás sin comprobar).
+    // Fase 5: clonación con IA (HeyGen) — por usuario (mismo motivo que el
+    // análisis de competencia: no dejar que uno con muchos guiones aprobados
+    // acapare el ciclo y deje a los demás sin comprobar). Tres pasos en
+    // cadena por guion: descarga del mp4 de HeyGen -> subtítulos (Whisper +
+    // Remotion) -> lanzar los guiones recién aprobados que aún no tienen render.
     for (const userId of users) {
       try {
         const p = await pollHeygenRenders(userId);
         base.heygen.checked += p.checked;
-        base.heygen.completed += p.completed;
         base.heygen.errors += p.errors;
         if (p.errors > 0) heygenOk = false;
+
+        const c = await processCaptioning(userId);
+        base.heygen.completed += c.completed;
+        base.heygen.errors += c.errors;
+        if (c.errors > 0) heygenOk = false;
 
         const t = await triggerApprovedScripts(userId);
         base.heygen.queued += t.queued;

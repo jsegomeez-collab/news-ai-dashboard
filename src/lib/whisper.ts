@@ -22,7 +22,7 @@ export function isOpenAiKeyFormat(key: string): boolean {
 // durante la vida del proceso.
 const _openaiClients = new Map<string, OpenAI>();
 const MAX_CACHED_CLIENTS = 50;
-function openaiClient(apiKey: string): OpenAI {
+export function openaiClient(apiKey: string): OpenAI {
   let c = _openaiClients.get(apiKey);
   if (!c) {
     c = new OpenAI({ apiKey });
