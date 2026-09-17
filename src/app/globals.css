@@ -9,3 +9,33 @@
 body {
   @apply bg-ink text-zinc-200;
 }
+
+/* Transición suave global: cualquier elemento interactivo cambia de color/
+   fondo/borde/opacidad con una animación breve en vez de un salto brusco.
+   Esto es lo que hace que la interfaz "se sienta viva" sin añadir movimiento
+   que distraiga. */
+a, button, input, select, textarea, summary {
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease,
+    opacity 150ms ease, box-shadow 200ms ease, transform 150ms ease;
+}
+
+/* Halo: un resplandor azul sutil aparece detrás de los botones primarios al
+   pasar el ratón o enfocarlos — reutiliza la clase bg-brand que ya usan los
+   botones de acción en toda la app, así que no hay que tocar cada componente. */
+.bg-brand:hover {
+  box-shadow: 0 0 24px -4px rgb(59 130 246 / 0.55);
+}
+.bg-brand:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(59 130 246 / 0.35);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes aurora-drift {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(4%, -3%) scale(1.06); }
+  }
+  .animate-aurora {
+    animation: aurora-drift 32s ease-in-out infinite;
+  }
+}

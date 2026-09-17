@@ -5,18 +5,20 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Paleta "azulada": fondo con tinte navy en vez de gris neutro, y más
-        // salto de luminosidad entre ink/panel/edge que antes (las tarjetas
-        // se distinguían apenas del fondo). brand = azul (acción/marca
-        // principal); brand2 = naranja/ámbar (acento secundario puntual:
-        // alertas, "en vivo", relevancia alta) — mismo contraste azul/naranja
-        // de la referencia, pero con el azul como protagonista.
-        ink: "#070b16",
-        panel: "#101a2e",
-        panel2: "#16233d",
-        edge: "#2a3a5c",
+        // "Halo theme": base neutra y sobria tipo Notion dark (sin el tinte
+        // navy saturado de antes — el color ahora lo pone el halo ambiental
+        // de fondo y los acentos, no la superficie) con bordes de bajo
+        // contraste ("apenas están ahí"). brand = azul (acción/marca
+        // principal); brand2 = naranja/ámbar (acento secundario puntual).
+        ink: "#0a0a0c",
+        panel: "#141416",
+        panel2: "#1c1c1f",
+        edge: "#26262a",
         brand: "#3b82f6",
         brand2: "#ff8a3d",
+      },
+      fontFamily: {
+        sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
       },
     },
   },
