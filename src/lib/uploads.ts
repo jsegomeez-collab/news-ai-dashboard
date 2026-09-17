@@ -3,12 +3,13 @@ import { join, dirname, extname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { dbInfo } from "./db";
 
-// Los audios/videos que el usuario sube (su propia voz leyendo el guion,
-// para que el editor los clone con IA) viven junto a la BD, en el MISMO
-// disco persistente — si la BD sobrevive a un redeploy, estos archivos
-// también deben hacerlo.
-function uploadsDir(): string {
-  const dir = join(dirname(dbInfo().path), "uploads");
+// Los audios/videos que el usuario sube (su propia voz leyendo el guion, o
+// cualquier archivo del Drive) viven junto a la BD, en el MISMO disco
+// persistente — si la BD sobrevive a un redeploy, estos archivos también
+// deben hacerlo. `subdir` solo organiza el disco (guiones vs. Drive), no
+// afecta a nada de la lógica.
+function uploadsDir(subdir: string): string {
+  const dir = join(dirname(dbInfo().path), subdir);
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -28,8 +29,8 @@ export function isAllowedMediaType(mime: string, filename: string): boolean {
 // Guarda el archivo subido con un nombre único (no el original, para no
 // colisionar ni depender de que el nombre venga "limpio") y devuelve la ruta
 // absoluta guardada en la BD.
-export async function saveUpload(file: File): Promise<{ path: string; size: number }> {
-  const dir = uploadsDir();
+export async function saveUpload(file: File, subdir = "uploads"): Promise<{ path: string; size: number }> {
+  const dir = uploadsDir(subdir);
   const ext = extname(file.name) || "";
   const name = `${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
   const path = join(dir, name);

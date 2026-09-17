@@ -310,6 +310,35 @@ CREATE TABLE IF NOT EXISTS competitor_scripts (
 CREATE INDEX IF NOT EXISTS idx_comp_scripts_user  ON competitor_scripts(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comp_scripts_video ON competitor_scripts(video_id);
 
+-- ===== DRIVE: carpetas + audios/video subidos, vinculables a un guion =====
+CREATE TABLE IF NOT EXISTS drive_folders (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  parent_id  INTEGER REFERENCES drive_folders(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_drive_folders_parent ON drive_folders(user_id, parent_id);
+
+CREATE TABLE IF NOT EXISTS drive_files (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  folder_id      INTEGER REFERENCES drive_folders(id) ON DELETE CASCADE,
+  original_name  TEXT NOT NULL,
+  path           TEXT NOT NULL,
+  mime           TEXT NOT NULL,
+  size           INTEGER NOT NULL,
+  kind           TEXT NOT NULL DEFAULT 'video',
+  status         TEXT NOT NULL DEFAULT 'por_grabar',
+  scheduled_date TEXT,
+  linked_type    TEXT,
+  linked_id      INTEGER,
+  notes          TEXT,
+  uploaded_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_drive_files_folder ON drive_files(user_id, folder_id);
+CREATE INDEX IF NOT EXISTS idx_drive_files_sched   ON drive_files(user_id, scheduled_date);
+
 -- Fila única: último latido del worker de fondo. Si esto deja de actualizarse,
 -- el worker está muerto aunque la web siga respondiendo con normalidad.
 CREATE TABLE IF NOT EXISTS worker_heartbeat (

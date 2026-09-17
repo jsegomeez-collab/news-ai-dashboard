@@ -7,6 +7,8 @@ const baseTabs = [
   { href: "/guiones", label: "🎬 Guiones" },
   { href: "/competencia", label: "🕵️ Competencia" },
   { href: "/adaptados", label: "🗂️ Adaptados" },
+  { href: "/drive", label: "🗄️ Drive" },
+  { href: "/calendario", label: "📅 Calendario" },
   { href: "/marca", label: "🧠 Marca" },
   { href: "/ajustes", label: "⚙️ Ajustes" },
 ];
