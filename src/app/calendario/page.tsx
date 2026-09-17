@@ -383,6 +383,15 @@ export default function CalendarioPage() {
   const allContentItems = allData?.items ?? [];
   const byStatus = (st: string) => allContentItems.filter((it) => it.status === st);
 
+  // Calendario y Pipeline son dos vistas de la MISMA tabla (content_items),
+  // pero cada una hace su propio polling independiente — sin esto, crear o
+  // editar algo en una vista tardaría hasta 20-30s (su propio intervalo) en
+  // reflejarse en la otra si cambiabas de pestaña justo después.
+  function refreshBoth() {
+    refresh();
+    refreshAll();
+  }
+
   const itemsByDate = useMemo(() => {
     const map: Record<string, CalendarItem[]> = {};
     for (const it of items) (map[it.date] ??= []).push(it);
@@ -480,11 +489,11 @@ export default function CalendarioPage() {
                       <CreateItemForm
                         initialStatus={st}
                         onCancel={() => setCreatingStatus(null)}
-                        onCreated={() => { setCreatingStatus(null); refreshAll(); }}
+                        onCreated={() => { setCreatingStatus(null); refreshBoth(); }}
                       />
                     )}
                     {col.map((it) => (
-                      <ContentItemCard key={it.id} id={it.id} onChange={refreshAll} />
+                      <ContentItemCard key={it.id} id={it.id} onChange={refreshBoth} />
                     ))}
                     {col.length === 0 && creatingStatus !== st && (
                       <div className="rounded border border-dashed border-edge p-3 text-center text-xs text-zinc-600">
@@ -567,7 +576,7 @@ export default function CalendarioPage() {
               <CreateItemForm
                 fixedDate={creatingDate}
                 onCancel={() => setCreatingDate(null)}
-                onCreated={() => { setCreatingDate(null); refresh(); refreshAll(); }}
+                onCreated={() => { setCreatingDate(null); refreshBoth(); }}
               />
             )}
 
@@ -577,7 +586,7 @@ export default function CalendarioPage() {
               <div className="space-y-2">
                 {(itemsByDate[selectedDate] ?? []).map((it) =>
                   it.source === "content" ? (
-                    <ContentItemCard key={`content-${it.id}`} id={it.id} onChange={refresh} />
+                    <ContentItemCard key={`content-${it.id}`} id={it.id} onChange={refreshBoth} />
                   ) : (
                     <SimpleItemCard key={`${it.source}-${it.id}`} item={it} onChange={refresh} />
                   )
