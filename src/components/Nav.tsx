@@ -14,14 +14,16 @@ export function Nav({ isAdmin = false }: { isAdmin?: boolean }) {
   const path = usePathname();
   const tabs = isAdmin ? [...baseTabs, { href: "/admin", label: "🛡️ Admin" }] : baseTabs;
   return (
-    <nav className="flex gap-2 border-b border-edge">
+    // overflow-x-auto en vez de dejar que las etiquetas más largas ("Noticias
+    // en vivo") envuelvan en móvil — eso rompía la altura de la fila entera.
+    <nav className="flex gap-2 overflow-x-auto border-b border-edge">
       {tabs.map((t) => {
         const active = path === t.href;
         return (
           <Link
             key={t.href}
             href={t.href}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition ${
               active ? "border-brand text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"
             }`}
           >

@@ -11,6 +11,17 @@ function relColor(r: number | null): string {
   return "bg-zinc-700 text-zinc-300";
 }
 
+// Franja de color a la izquierda de cada tarjeta, a juego con el badge de
+// relevancia — permite escanear el feed por color sin leer el número de cada
+// una (antes todas las tarjetas eran visualmente idénticas entre sí).
+function relBorder(r: number | null): string {
+  if (r === null) return "border-l-zinc-700";
+  if (r >= 80) return "border-l-emerald-500";
+  if (r >= 60) return "border-l-brand";
+  if (r >= 40) return "border-l-amber-500";
+  return "border-l-zinc-700";
+}
+
 function GuionizarBtn({ articleId }: { articleId: number }) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
@@ -121,7 +132,7 @@ export default function NoticiasPage() {
 
       <div className="grid gap-3">
         {items.map((n) => (
-          <article key={n.id} className="rounded-lg border border-edge bg-panel p-4">
+          <article key={n.id} className={`rounded-lg border border-edge border-l-4 ${relBorder(n.relevance)} bg-panel p-4 transition hover:bg-panel2`}>
             <div className="flex items-start justify-between gap-3">
               <a
                 href={n.url}

@@ -226,32 +226,40 @@ export default function GuionesPage() {
       </div>
 
       {view === "pipeline" ? (
-        <div className="flex gap-3 overflow-x-auto pb-4">
-          {SCRIPT_STATUSES.map((st) => {
-            const col = byStatus(st);
-            return (
-              <div key={st} className="w-72 shrink-0">
-                <div className="mb-2 flex items-center gap-2">
-                  <span
-                    className="inline-block h-2.5 w-2.5 rounded-full"
-                    style={{ background: STATUS_COLOR[st] }}
-                  />
-                  <h3 className="text-sm font-semibold text-white">{STATUS_LABEL[st]}</h3>
-                  <span className="text-xs text-zinc-500">{col.length}</span>
+        <div className="relative">
+          {/* 7 columnas de 18rem no caben en ningún viewport normal (~2100px
+              necesarios) — sin este aviso + degradado, nada indica que hay
+              más estados fuera de pantalla a la derecha (en móvil esto
+              cortaba la 2ª columna a la mitad sin ninguna pista). */}
+          <p className="mb-2 text-xs text-zinc-600">⟷ desliza para ver el resto de estados</p>
+          <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4">
+            {SCRIPT_STATUSES.map((st) => {
+              const col = byStatus(st);
+              return (
+                <div key={st} className="w-72 shrink-0 snap-start">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                      style={{ background: STATUS_COLOR[st] }}
+                    />
+                    <h3 className="text-sm font-semibold text-white">{STATUS_LABEL[st]}</h3>
+                    <span className="text-xs text-zinc-500">{col.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {col.map((s) => (
+                      <ScriptCard key={s.id} s={s} onChange={refresh} />
+                    ))}
+                    {col.length === 0 && (
+                      <div className="rounded border border-dashed border-edge p-3 text-center text-xs text-zinc-600">
+                        vacío
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {col.map((s) => (
-                    <ScriptCard key={s.id} s={s} onChange={refresh} />
-                  ))}
-                  {col.length === 0 && (
-                    <div className="rounded border border-dashed border-edge p-3 text-center text-xs text-zinc-600">
-                      vacío
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          <div className="pointer-events-none absolute right-0 top-6 bottom-4 w-10 bg-gradient-to-l from-ink to-transparent" />
         </div>
       ) : (
         <div className="grid gap-3">

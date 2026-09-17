@@ -70,8 +70,15 @@ function Pill({
   title?: string;
 }) {
   const colors = { default: "text-zinc-300", good: "text-emerald-400", warn: "text-amber-400", bad: "text-red-400" };
+  // Chip con fondo propio (panel2) en vez de texto suelto separado por gaps:
+  // en desktop una fila de texto plano ya se lee bien, pero en móvil, donde
+  // el flex-wrap parte esta barra en 2-3 filas, un fondo delimita cada dato
+  // y evita que parezca una frase rota a media línea.
   return (
-    <div className="flex items-center gap-1.5" title={title}>
+    <div
+      className="flex items-center gap-1.5 rounded-md bg-panel2/70 px-2 py-1"
+      title={title}
+    >
       <span className="text-zinc-500">{label}</span>
       <span className={`font-semibold ${colors[tone]}`}>{value}</span>
     </div>
@@ -91,7 +98,7 @@ export function StatusBar() {
           <code>DB_PATH=/data/app.db</code>.
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-edge bg-panel px-4 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-edge bg-panel px-3 py-2 text-xs">
       <Pill label="Worker" {...workerPill(data.worker ?? null)} />
       <Pill label="Espías" {...competitorPill(data.worker ?? null)} />
       <Pill label="Clave Anthropic" value={data.hasKey ? "conectada" : "falta"} tone={data.hasKey ? "good" : "bad"} />
