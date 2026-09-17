@@ -51,6 +51,8 @@ export type RenderCaptionedVideoOptions = {
   widthPx: number;
   heightPx: number;
   outPath: string;
+  title: string | null;
+  subtitle: string | null;
 };
 
 export async function renderCaptionedVideo(opts: RenderCaptionedVideoOptions): Promise<void> {
@@ -62,6 +64,8 @@ export async function renderCaptionedVideo(opts: RenderCaptionedVideoOptions): P
       durationInSeconds: opts.durationInSeconds,
       widthPx: opts.widthPx,
       heightPx: opts.heightPx,
+      title: opts.title,
+      subtitle: opts.subtitle,
     };
 
     const composition = await selectComposition({ serveUrl, id: "CaptionedVideo", inputProps });

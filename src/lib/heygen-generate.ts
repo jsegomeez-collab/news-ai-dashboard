@@ -8,6 +8,7 @@ import { isOpenAiKeyFormat } from "./whisper";
 import { transcribeWithWordTimestamps } from "./captions";
 import { createTikTokStyleCaptions } from "@remotion/captions";
 import { renderCaptionedVideo } from "./remotion-render";
+import { generateVideoTitle } from "./videoTitle";
 
 export type SourceType = "script" | "competitor_script";
 
@@ -248,6 +249,12 @@ export async function processCaptioning(
       const captions = await transcribeWithWordTimestamps(settings.openaiKey, r.video_path);
       const { pages } = createTikTokStyleCaptions({ captions, combineTokensWithinMilliseconds: 1200 });
 
+      // Reutiliza la MISMA transcripción para detectar el título de cabecera
+      // (no se vuelve a llamar a Whisper). No bloqueante: si falla, el vídeo
+      // se renderiza igual, solo que sin cabecera arriba.
+      const transcriptText = captions.map((c) => c.text).join(" ");
+      const titleInfo = await generateVideoTitle(r.user_id, transcriptText);
+
       const outPath = newUploadPath(`captioned-${r.source_type}-${r.source_id}.mp4`, "heygen");
       await renderCaptionedVideo({
         videoPath: r.video_path,
@@ -256,6 +263,8 @@ export async function processCaptioning(
         widthPx,
         heightPx,
         outPath,
+        title: titleInfo?.title ?? null,
+        subtitle: titleInfo?.subtitle ?? null,
       });
 
       deleteUploadIfExists(r.video_path); // el crudo de HeyGen ya no hace falta, solo ocupaba disco

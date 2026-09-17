@@ -9,6 +9,8 @@ const DEFAULT_PROPS: CaptionedVideoProps = {
   durationInSeconds: 1,
   widthPx: 1080,
   heightPx: 1920,
+  title: null,
+  subtitle: null,
 };
 
 // La duración/dimensiones reales no se saben hasta el render (dependen del
