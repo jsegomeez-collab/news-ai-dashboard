@@ -10,20 +10,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const authPage = pathname === "/login" || pathname === "/register";
+  // Página pública para compartir guiones con un influencer/editor sin cuenta:
+  // ni consulta sesión ni redirige a /login, y no lleva cabecera/nav de la app.
+  const isShared = pathname.startsWith("/compartido/");
   const [user, setUser] = useState<User | null | undefined>(undefined);
 
   useEffect(() => {
+    if (isShared) return;
     fetch("/api/auth/me", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { user: null }))
       .then((d: { user: User | null }) => setUser(d.user))
       .catch(() => setUser(null));
-  }, [pathname]);
+  }, [pathname, isShared]);
 
   useEffect(() => {
+    if (isShared) return;
     if (user === undefined) return;
     if (!user && !authPage) router.replace("/login");
     if (user && authPage) router.replace("/");
-  }, [user, authPage, router]);
+  }, [user, authPage, isShared, router]);
+
+  if (isShared) return <>{children}</>;
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });

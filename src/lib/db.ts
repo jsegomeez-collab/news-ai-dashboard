@@ -366,6 +366,21 @@ CREATE TABLE IF NOT EXISTS content_items (
 );
 CREATE INDEX IF NOT EXISTS idx_content_items_date ON content_items(user_id, scheduled_date);
 
+-- Enlaces públicos para compartir guiones sueltos con un influencer/editor sin
+-- que necesite cuenta: un token abre una página de solo lectura con el texto
+-- de los guiones elegidos. "items" guarda [{type, id}] como JSON porque el
+-- número de guiones por enlace es variable (no tiene sentido una tabla puente).
+CREATE TABLE IF NOT EXISTS shared_links (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token      TEXT NOT NULL UNIQUE,
+  title      TEXT,
+  items      TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shared_links_token ON shared_links(token);
+CREATE INDEX IF NOT EXISTS idx_shared_links_user  ON shared_links(user_id, created_at DESC);
+
 -- Fila única: último latido del worker de fondo. Si esto deja de actualizarse,
 -- el worker está muerto aunque la web siga respondiendo con normalidad.
 CREATE TABLE IF NOT EXISTS worker_heartbeat (

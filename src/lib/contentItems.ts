@@ -51,6 +51,18 @@ export function getContentItem(userId: number, id: number): ContentItem | null {
   );
 }
 
+// Para saber, desde /adaptados, si un guion concreto ya tiene una publicación
+// programada en el calendario (y con qué fecha/estado) antes de abrir el popup.
+export function listContentItemsByLink(userId: number, linkedType: string, linkedId: number): ContentItem[] {
+  return db
+    .prepare(
+      `SELECT ci.*, ${LINK_TITLE_SQL} FROM content_items ci
+       WHERE ci.user_id = ? AND ci.linked_type = ? AND ci.linked_id = ?
+       ORDER BY ci.scheduled_date ASC`
+    )
+    .all(userId, linkedType, linkedId) as ContentItem[];
+}
+
 export function createContentItem(
   userId: number,
   data: { linkedType?: string | null; linkedId?: number | null; title?: string | null; scheduledDate: string; status?: string }

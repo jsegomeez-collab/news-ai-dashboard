@@ -2,8 +2,13 @@
 import { useEffect, useRef, useState } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
 import type { CompetitorAccount, CompetitorScriptItem } from "@/lib/competitor";
-import { PLATFORM_ICON, PLATFORM_LABEL, SCRIPT_STATUS_LABEL, fmt } from "@/lib/competitorUi";
+import { PLATFORM_ICON, PLATFORM_LABEL, fmt } from "@/lib/competitorUi";
 import { buildScriptText } from "@/lib/scriptText";
+import { PipelineStepper } from "@/components/PipelineStepper";
+import { Modal } from "@/components/Modal";
+import { StatusPill } from "@/components/StatusPill";
+import { DRIVE_STATUSES } from "@/lib/driveUi";
+import type { ContentItem } from "@/lib/contentItems";
 
 const PAGE_SIZE = 20;
 
@@ -109,10 +114,209 @@ function MediaUpload({ scriptId, initial }: { scriptId: number; initial: Media }
   );
 }
 
-function ScriptDoc({ s }: { s: CompetitorScriptItem }) {
+// Popup para asignar (o editar) la fecha/estado de subida de un guion en el
+// calendario, sin salir de /adaptados. Si el guion ya tenía una publicación
+// programada, la carga y la actualiza en vez de duplicarla.
+function CalendarModal({ s, onClose }: { s: CompetitorScriptItem; onClose: () => void }) {
+  const [loading, setLoading] = useState(true);
+  const [existingId, setExistingId] = useState<number | null>(null);
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [status, setStatus] = useState<string>("por_grabar");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch(`/api/content-items?linkedType=competitor_script&linkedId=${s.id}`)
+      .then((r) => r.json())
+      .then((d: { items?: ContentItem[] }) => {
+        const item = d.items?.[0];
+        if (item) {
+          setExistingId(item.id);
+          setDate(item.scheduled_date);
+          setStatus(item.status);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [s.id]);
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      const res = existingId
+        ? await fetch(`/api/content-items/${existingId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scheduledDate: date, status }),
+          })
+        : await fetch(`/api/content-items`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ linkedType: "competitor_script", linkedId: s.id, scheduledDate: date, status }),
+          });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Error al guardar");
+      setSaved(true);
+      setTimeout(onClose, 900);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="📅 Añadir al calendario" onClose={onClose}>
+      {loading ? (
+        <p className="text-sm text-zinc-500">Cargando…</p>
+      ) : (
+        <div className="space-y-4">
+          <p className="line-clamp-2 text-sm text-zinc-400">{s.title}</p>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-400">Fecha de subida</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full rounded border border-edge bg-ink px-3 py-2 text-sm text-zinc-200"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-400">Estado</label>
+            <div className="flex flex-wrap gap-2">
+              {DRIVE_STATUSES.map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setStatus(st)}
+                  className={`rounded-full transition ${status === st ? "" : "opacity-40 hover:opacity-80"}`}
+                >
+                  <StatusPill status={st} size="sm" />
+                </button>
+              ))}
+            </div>
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={onClose} className="rounded border border-edge px-3 py-1.5 text-sm text-zinc-400 hover:bg-panel2">
+              Cancelar
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="rounded bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
+            >
+              {saved ? "✓ Guardado" : saving ? "Guardando…" : existingId ? "Actualizar" : "Añadir"}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Popup para generar el enlace público de "guiones seleccionados", pensado
+// para mandárselo de un tirón a un influencer/editor sin darle acceso a la app.
+function ShareModal({ ids, onClose }: { ids: number[]; onClose: () => void }) {
+  const [title, setTitle] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [url, setUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function create() {
+    setCreating(true);
+    setError("");
+    try {
+      const res = await fetch("/api/shared-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: ids.map((id) => ({ type: "competitor_script", id })), title: title || undefined }),
+      });
+      const json = (await res.json()) as { ok?: boolean; token?: string; error?: string };
+      if (!res.ok || !json.token) throw new Error(json.error ?? "Error al crear el enlace");
+      setUrl(`${window.location.origin}/compartido/${json.token}`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function copy() {
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <Modal title="🔗 Compartir guiones" onClose={onClose}>
+      <div className="space-y-4">
+        {!url ? (
+          <>
+            <p className="text-sm text-zinc-400">
+              Se generará un enlace público (sin login) con el texto completo de los {ids.length} guiones
+              seleccionados — listo para enviarle al influencer o editor.
+            </p>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-400">Título (opcional)</label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Ej: Guiones semana 38"
+                className="w-full rounded border border-edge bg-ink px-3 py-2 text-sm text-zinc-200"
+              />
+            </div>
+            {error && <p className="text-xs text-red-400">{error}</p>}
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={onClose} className="rounded border border-edge px-3 py-1.5 text-sm text-zinc-400 hover:bg-panel2">
+                Cancelar
+              </button>
+              <button
+                onClick={create}
+                disabled={creating}
+                className="rounded bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand/90 disabled:opacity-50"
+              >
+                {creating ? "Generando…" : "Generar enlace"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-zinc-400">Enlace listo. Cópialo y compártelo:</p>
+            <div className="flex items-center gap-2 rounded border border-edge bg-ink px-3 py-2">
+              <span className="min-w-0 flex-1 truncate text-sm text-zinc-300">{url}</span>
+              <button onClick={copy} className="shrink-0 rounded bg-brand px-3 py-1 text-xs font-medium text-white hover:bg-brand/90">
+                {copied ? "✓ Copiado" : "Copiar"}
+              </button>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button onClick={onClose} className="rounded border border-edge px-3 py-1.5 text-sm text-zinc-400 hover:bg-panel2">
+                Cerrar
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function ScriptDoc({
+  s,
+  selected,
+  onToggleSelect,
+}: {
+  s: CompetitorScriptItem;
+  selected: boolean;
+  onToggleSelect: () => void;
+}) {
   const [status, setStatus] = useState(s.status);
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
 
   async function changeStatus(st: string) {
     setStatus(st);
@@ -130,16 +334,25 @@ function ScriptDoc({ s }: { s: CompetitorScriptItem }) {
   }
 
   return (
-    <article className="rounded-xl border border-edge/70 bg-panel p-5">
+    <article className={`rounded-xl border p-5 transition ${selected ? "border-brand bg-brand/5" : "border-edge/70 bg-panel"}`}>
       <div className="flex gap-4">
-        {s.thumbnail_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={s.thumbnail_url} alt="" className="h-28 w-20 shrink-0 rounded-lg object-cover sm:h-32 sm:w-24" />
-        ) : (
-          <div className="flex h-28 w-20 shrink-0 items-center justify-center rounded-lg bg-ink text-3xl sm:h-32 sm:w-24">
-            {PLATFORM_ICON[s.account_platform]}
-          </div>
-        )}
+        <div className="flex shrink-0 flex-col items-center gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            title="Seleccionar para compartir"
+            className="h-4 w-4 shrink-0 cursor-pointer accent-brand"
+          />
+          {s.thumbnail_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={s.thumbnail_url} alt="" className="h-28 w-20 rounded-lg object-cover sm:h-32 sm:w-24" />
+          ) : (
+            <div className="flex h-28 w-20 items-center justify-center rounded-lg bg-ink text-3xl sm:h-32 sm:w-24">
+              {PLATFORM_ICON[s.account_platform]}
+            </div>
+          )}
+        </div>
 
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
@@ -151,22 +364,15 @@ function ScriptDoc({ s }: { s: CompetitorScriptItem }) {
             </span>
           </div>
 
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 rounded bg-brand2/15 px-1.5 py-0.5 text-[11px] font-medium text-brand2">
-                {s.format === "reel" ? "Reel" : "YouTube"}
-              </span>
-              <h3 className="truncate text-base font-semibold text-white">{s.title}</h3>
-            </div>
-            <select
-              value={status}
-              onChange={(e) => changeStatus(e.target.value)}
-              className="shrink-0 rounded border-none bg-transparent py-0.5 text-xs text-zinc-500 outline-none hover:text-zinc-300"
-            >
-              {Object.entries(SCRIPT_STATUS_LABEL).map(([k, v]) => (
-                <option key={k} value={k} className="bg-panel">{v}</option>
-              ))}
-            </select>
+          <div className="mb-3 flex min-w-0 items-center gap-2">
+            <span className="shrink-0 rounded bg-brand2/15 px-1.5 py-0.5 text-[11px] font-medium text-brand2">
+              {s.format === "reel" ? "Reel" : "YouTube"}
+            </span>
+            <h3 className="truncate text-base font-semibold text-white">{s.title}</h3>
+          </div>
+
+          <div className="mb-3 max-w-sm">
+            <PipelineStepper status={status} onChange={changeStatus} />
           </div>
 
           {/* Vista previa (gancho) cuando el guion está colapsado. */}
@@ -195,6 +401,12 @@ function ScriptDoc({ s }: { s: CompetitorScriptItem }) {
                 {copied ? "✓ Copiado" : "📋 Copiar guion"}
               </button>
             )}
+            <button
+              onClick={() => setShowCalendar(true)}
+              className="rounded border border-edge px-2.5 py-1 text-xs text-zinc-400 hover:border-brand hover:text-brand"
+            >
+              📅 Calendario
+            </button>
             <span className="ml-auto text-xs text-zinc-600">{timeAgo(s.created_at)}</span>
           </div>
         </div>
@@ -215,6 +427,8 @@ function ScriptDoc({ s }: { s: CompetitorScriptItem }) {
           />
         </div>
       )}
+
+      {showCalendar && <CalendarModal s={s} onClose={() => setShowCalendar(false)} />}
     </article>
   );
 }
@@ -224,6 +438,8 @@ export default function AdaptadosPage() {
   const [accountFilter, setAccountFilter] = useState<number | undefined>(undefined);
   const [formatFilter, setFormatFilter] = useState("");
   const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [showShare, setShowShare] = useState(false);
 
   const { data: accountsData } = usePoll<{ accounts: CompetitorAccount[] }>("/api/competitors", 60000);
   const accounts = accountsData?.accounts ?? [];
@@ -242,6 +458,10 @@ export default function AdaptadosPage() {
 
   // Resetea a página 1 cuando cambia cualquier filtro.
   useEffect(() => setPage(1), [sort, accountFilter, formatFilter]);
+
+  function toggleSelect(id: number) {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   function selectClass(extra = "") {
     return `rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200 ${extra}`;
@@ -280,6 +500,21 @@ export default function AdaptadosPage() {
         <span className="ml-auto text-xs text-zinc-500">{loading ? "cargando…" : `${total} guiones`}</span>
       </div>
 
+      {selected.length > 0 && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-brand/40 bg-brand/10 px-4 py-2.5">
+          <span className="text-sm font-medium text-zinc-200">{selected.length} seleccionados</span>
+          <button
+            onClick={() => setShowShare(true)}
+            className="rounded bg-brand px-3 py-1 text-xs font-medium text-white hover:bg-brand/90"
+          >
+            🔗 Generar link para compartir
+          </button>
+          <button onClick={() => setSelected([])} className="ml-auto text-xs text-zinc-400 hover:text-zinc-200">
+            Cancelar selección
+          </button>
+        </div>
+      )}
+
       {scripts.length === 0 ? (
         <div className="rounded-lg border border-dashed border-edge p-10 text-center text-zinc-500">
           <p className="mb-2 text-2xl">🗂️</p>
@@ -293,7 +528,7 @@ export default function AdaptadosPage() {
       ) : (
         <div className="space-y-4">
           {scripts.map((s) => (
-            <ScriptDoc key={s.id} s={s} />
+            <ScriptDoc key={s.id} s={s} selected={selected.includes(s.id)} onToggleSelect={() => toggleSelect(s.id)} />
           ))}
         </div>
       )}
@@ -316,6 +551,16 @@ export default function AdaptadosPage() {
             Siguiente →
           </button>
         </div>
+      )}
+
+      {showShare && (
+        <ShareModal
+          ids={selected}
+          onClose={() => {
+            setShowShare(false);
+            setSelected([]);
+          }}
+        />
       )}
     </div>
   );
