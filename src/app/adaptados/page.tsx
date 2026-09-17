@@ -9,8 +9,14 @@ import { Modal } from "@/components/Modal";
 import { StatusPill } from "@/components/StatusPill";
 import { DRIVE_STATUSES } from "@/lib/driveUi";
 import type { ContentItem } from "@/lib/contentItems";
+import { SCRIPT_STATUSES, STATUS_LABEL } from "@/lib/status";
 
 const PAGE_SIZE = 20;
+
+const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "Todos los estados" },
+  ...SCRIPT_STATUSES.map((st) => ({ value: st, label: STATUS_LABEL[st] })),
+];
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "recent", label: "Más recientes" },
@@ -437,6 +443,9 @@ export default function AdaptadosPage() {
   const [sort, setSort] = useState("recent");
   const [accountFilter, setAccountFilter] = useState<number | undefined>(undefined);
   const [formatFilter, setFormatFilter] = useState("");
+  // Filtro por estado del pipeline: por defecto "todos", pero deja excluir p.ej.
+  // los ya grabados/subidos para centrarse en lo que aún queda pendiente.
+  const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<number[]>([]);
   const [showShare, setShowShare] = useState(false);
@@ -447,6 +456,7 @@ export default function AdaptadosPage() {
   const params = new URLSearchParams({ sort, page: String(page), pageSize: String(PAGE_SIZE) });
   if (accountFilter) params.set("accountId", String(accountFilter));
   if (formatFilter) params.set("format", formatFilter);
+  if (statusFilter) params.set("status", statusFilter);
 
   const { data, loading } = usePoll<{ scripts: CompetitorScriptItem[]; total: number; pages: number }>(
     `/api/competitors/scripts?${params.toString()}`,
@@ -457,7 +467,7 @@ export default function AdaptadosPage() {
   const pages = data?.pages ?? 1;
 
   // Resetea a página 1 cuando cambia cualquier filtro.
-  useEffect(() => setPage(1), [sort, accountFilter, formatFilter]);
+  useEffect(() => setPage(1), [sort, accountFilter, formatFilter, statusFilter]);
 
   function toggleSelect(id: number) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -497,6 +507,11 @@ export default function AdaptadosPage() {
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectClass()}>
+          {STATUS_FILTER_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
         <span className="ml-auto text-xs text-zinc-500">{loading ? "cargando…" : `${total} guiones`}</span>
       </div>
 
@@ -519,7 +534,7 @@ export default function AdaptadosPage() {
         <div className="rounded-lg border border-dashed border-edge p-10 text-center text-zinc-500">
           <p className="mb-2 text-2xl">🗂️</p>
           <p className="text-sm">
-            {accountFilter || formatFilter ? "No hay guiones con este filtro." : "Aún no hay guiones adaptados."}
+            {accountFilter || formatFilter || statusFilter ? "No hay guiones con este filtro." : "Aún no hay guiones adaptados."}
           </p>
           <p className="mt-1 text-xs text-zinc-600">
             Ve a Competencia → Videos, localiza uno ya analizado y pulsa "Generar guion adaptado".

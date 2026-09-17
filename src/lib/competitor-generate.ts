@@ -63,6 +63,76 @@ type AdaptedOut = {
   adaptation_notes: string;
 };
 
+// ─── Filtro de calidad: autocrítica + optimización antes de dar el guion por bueno ──
+// Detectado un bug real: el body a veces repetía, con otras palabras, lo mismo
+// que ya decía el cta (o el puente) — la generación en un solo paso no se
+// autorrevisaba. Este segundo paso obliga al modelo a puntuarse con dureza y
+// corregir duplicados antes de guardar nada.
+
+const REFINE_SCHEMA = {
+  type: "object",
+  properties: {
+    score:        { type: "integer", description: "Autopuntuación honesta 0-10 del guion recién generado, ANTES de tus correcciones. No infles la nota: un 10 es raro." },
+    issues_found: { type: "string", description: "Problemas concretos encontrados (duplicaciones entre body/cta/puente, frases repetidas, cortes sin sentido, contradicciones), o 'Ninguno' si estaba limpio." },
+    hook:         { type: "string", description: "EXACTAMENTE igual al hook que te paso — PROHIBIDO tocarlo, ni una palabra distinta." },
+    puente:       { type: "string", description: "Puente ya corregido (igual que el original si no tenía ningún problema)." },
+    body:         { type: "string", description: "Cuerpo corregido: sin repetir ninguna frase o idea que también esté en el CTA o el puente, sin repeticiones dentro de sí mismo, fluido de principio a fin." },
+    cta:          { type: "string", description: "CTA corregido: si esa idea ya se dijo en el body, dila UNA sola vez (quítala de aquí, no la repitas)." },
+  },
+  required: ["score", "issues_found", "hook", "puente", "body", "cta"],
+  additionalProperties: false,
+} as const;
+
+type RefineOut = {
+  score: number;
+  issues_found: string;
+  hook: string;
+  puente: string;
+  body: string;
+  cta: string;
+};
+
+const REFINE_SYSTEM =
+  "Eres el editor final que revisa un guion justo antes de darlo por publicable. Actúas como un filtro de " +
+  "calidad honesto y exigente — nada de aprobar algo mediocre solo por quedar bien.\n\n" +
+  "Tu proceso:\n" +
+  "1. Autopuntúa el guion del 1 al 10 siendo TOTALMENTE honesto contigo mismo (no infles la nota).\n" +
+  "2. Revisa especialmente si hay CONTENIDO DUPLICADO: frases o ideas que aparecen tanto en el body como en " +
+  "el CTA (o el puente), o repetidas dentro del propio body — es el fallo más común al adaptar guiones y hay " +
+  "que cazarlo siempre.\n" +
+  "3. Revisa que el guion completo tenga sentido de principio a fin y esté listo para grabarse tal cual, sin " +
+  "cortes raros ni contradicciones.\n" +
+  "4. Corrige lo que haga falta y devuelve la versión FINAL.\n\n" +
+  "REGLA ABSOLUTA: el campo 'hook' se copia EXACTAMENTE igual al que te paso, sin tocar ni una palabra. " +
+  "Si el guion ya estaba limpio, devuélvelo tal cual — no inventes cambios porque sí.\n\n" +
+  "Devuelve SOLO JSON válido.";
+
+async function refineAdaptedScript(
+  userId: number,
+  apiKey: string,
+  model: string,
+  draft: AdaptedOut
+): Promise<RefineOut | null> {
+  try {
+    const prompt =
+      `Revisa este guion adaptado antes de darlo por bueno:\n\n` +
+      `HOOK: ${draft.hook}\n\nPUENTE: ${draft.puente || "(vacío)"}\n\nBODY: ${draft.body}\n\nCTA: ${draft.cta || "(vacío)"}`;
+
+    const msg = await client(apiKey).messages.create({
+      model,
+      max_tokens: 2000,
+      system: REFINE_SYSTEM,
+      output_config: { format: { type: "json_schema", schema: REFINE_SCHEMA } },
+      messages: [{ role: "user", content: prompt }],
+    } as never);
+    recordUsage(userId, model, (msg as never as { usage: never }).usage);
+    return parseJsonFromText<RefineOut>(firstText(msg as never));
+  } catch (e) {
+    console.warn("[comp-gen] filtro de calidad falló:", (e as Error).message);
+    return null;
+  }
+}
+
 const ADAPTED_PERSONA =
   "Eres el Head of Content de una marca personal de IA aplicada a negocios digitales. " +
   "Te han dado la transcripción de un reel viral de la competencia y el análisis de por qué funciona. " +
@@ -249,7 +319,27 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
       recordUsage(userId, model, (genMsg as never as { usage: never }).usage, 1);
       const out = parseJsonFromText<AdaptedOut>(firstText(genMsg as never));
       if (out) {
-        const id = saveAdaptedScript(userId, videoId, format, out, model);
+        // Filtro de calidad antes de guardar: autocrítica + corrección de
+        // duplicados (sobre todo cta repetido dentro del body). Si el filtro
+        // falla por lo que sea, se guarda el borrador tal cual en vez de
+        // perder el guion — mejor sin pulir que sin generar.
+        const refined = await refineAdaptedScript(userId, settings.anthropicKey, model, out);
+        const final: AdaptedOut = refined
+          ? {
+              title: out.title,
+              hook: out.hook, // el hook NUNCA se toca, ni siquiera si el filtro lo cambia
+              puente: refined.puente,
+              body: refined.body,
+              cta: refined.cta,
+              adaptation_notes:
+                out.adaptation_notes +
+                ` · Autocrítica: ${refined.score}/10` +
+                (refined.issues_found && refined.issues_found.trim().toLowerCase() !== "ninguno"
+                  ? ` — ${refined.issues_found}`
+                  : ""),
+            }
+          : out;
+        const id = saveAdaptedScript(userId, videoId, format, final, model);
         generatedIds.push(id);
       }
     } catch (e) {
