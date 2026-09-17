@@ -337,6 +337,7 @@ function CreateItemForm({ date, onCreated, onCancel }: { date: string; onCreated
 
 export default function CalendarioPage() {
   const now = new Date();
+  const [view, setView] = useState<"calendar" | "pipeline">("calendar");
   const [year, setYear] = useState(now.getFullYear());
   const [monthIndex, setMonthIndex] = useState(now.getMonth()); // 0-11
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -345,6 +346,13 @@ export default function CalendarioPage() {
   const monthParam = `${year}-${pad2(monthIndex + 1)}`;
   const { data, refresh } = usePoll<{ items: CalendarItem[] }>(`/api/calendar?month=${monthParam}`, 30000);
   const items = data?.items ?? [];
+
+  // Vista Pipeline: todas las publicaciones (sin acotar por fecha), agrupadas
+  // por estado — para ver de un vistazo qué está en grabación/edición/subida
+  // ahora mismo, sin tener que ir mes a mes buscándolas en el grid.
+  const { data: allData, refresh: refreshAll } = usePoll<{ items: ContentItemFull[] }>("/api/content-items", 20000);
+  const allContentItems = allData?.items ?? [];
+  const byStatus = (st: string) => allContentItems.filter((it) => it.status === st);
 
   const itemsByDate = useMemo(() => {
     const map: Record<string, CalendarItem[]> = {};
@@ -386,100 +394,156 @@ export default function CalendarioPage() {
             Lo que tienes programado y lo que ya has publicado de verdad, en un solo sitio.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => changeMonth(-1)} className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 hover:border-brand">←</button>
-          <span className="w-36 text-center text-sm font-medium text-white">
-            {MONTH_LABEL[monthIndex]} {year}
-          </span>
-          <button onClick={() => changeMonth(1)} className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 hover:border-brand">→</button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-7 gap-1.5 text-center text-xs text-zinc-500">
-        {WEEKDAY_LABEL.map((w) => (
-          <div key={w} className="pb-1">{w}</div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-1.5">
-        {cells.map((dateStr, i) => {
-          if (!dateStr) return <div key={`empty-${i}`} />;
-          const dayItems = itemsByDate[dateStr] ?? [];
-          const isToday = dateStr === todayStr;
-          const isSelected = dateStr === selectedDate;
-          return (
-            <div
-              key={dateStr}
-              className={`group relative min-h-20 rounded-xl border p-1.5 text-left transition ${
-                isSelected ? "border-brand bg-panel2" : isToday ? "border-brand/50 bg-panel" : "border-edge bg-panel hover:border-edge"
-              }`}
-            >
-              <button onClick={() => openDay(dateStr, false)} className="block w-full text-left">
-                <div className={`text-xs ${isToday ? "font-semibold text-brand" : "text-zinc-500"}`}>{Number(dateStr.slice(-2))}</div>
-                <div className="mt-1 space-y-0.5">
-                  {dayItems.slice(0, 3).map((it) => (
-                    <div
-                      key={`${it.source}-${it.id}`}
-                      className={`truncate rounded px-1 text-[10px] font-medium ${
-                        it.status === "subido" ? "bg-emerald-500/20 text-emerald-300"
-                        : it.status === "por_subir" ? "bg-brand/20 text-brand"
-                        : it.status === "editando" ? "bg-amber-500/20 text-amber-300"
-                        : "bg-zinc-700/60 text-zinc-300"
-                      }`}
-                    >
-                      {it.title}
-                    </div>
-                  ))}
-                  {dayItems.length > 3 && <div className="text-[10px] text-zinc-600">+{dayItems.length - 3} más</div>}
-                </div>
-              </button>
-              <button
-                onClick={() => openDay(dateStr, true)}
-                title="Añadir publicación este día"
-                className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-brand text-xs font-bold text-white opacity-0 shadow-[0_0_10px_-2px_rgba(59,130,246,0.8)] transition group-hover:flex group-hover:opacity-100"
-              >
-                +
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {selectedDate && (
-        <div className="mt-4 space-y-3 rounded-xl border border-edge bg-panel p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">{selectedDate}</h3>
-            {!creatingDate && (
-              <button
-                onClick={() => setCreatingDate(selectedDate)}
-                className="rounded-lg border border-edge px-2.5 py-1 text-xs text-zinc-300 hover:border-brand hover:text-brand"
-              >
-                ＋ Añadir publicación
-              </button>
-            )}
+        {view === "calendar" && (
+          <div className="flex items-center gap-2">
+            <button onClick={() => changeMonth(-1)} className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 hover:border-brand">←</button>
+            <span className="w-36 text-center text-sm font-medium text-white">
+              {MONTH_LABEL[monthIndex]} {year}
+            </span>
+            <button onClick={() => changeMonth(1)} className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 hover:border-brand">→</button>
           </div>
+        )}
+      </div>
 
-          {creatingDate && (
-            <CreateItemForm
-              date={creatingDate}
-              onCancel={() => setCreatingDate(null)}
-              onCreated={() => { setCreatingDate(null); refresh(); }}
-            />
-          )}
+      <div className="mb-4 flex items-center gap-2">
+        <button
+          onClick={() => setView("calendar")}
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            view === "calendar" ? "bg-brand text-white" : "bg-panel text-zinc-300"
+          }`}
+        >
+          📅 Calendario
+        </button>
+        <button
+          onClick={() => setView("pipeline")}
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            view === "pipeline" ? "bg-brand text-white" : "bg-panel text-zinc-300"
+          }`}
+        >
+          🔀 Pipeline (en grabación)
+        </button>
+        {view === "pipeline" && (
+          <span className="ml-auto text-xs text-zinc-500">{allContentItems.length} publicaciones</span>
+        )}
+      </div>
 
-          {(itemsByDate[selectedDate] ?? []).length === 0 && !creatingDate ? (
-            <p className="text-sm text-zinc-500">Nada programado este día.</p>
-          ) : (
-            <div className="space-y-2">
-              {(itemsByDate[selectedDate] ?? []).map((it) =>
-                it.source === "content" ? (
-                  <ContentItemCard key={`content-${it.id}`} id={it.id} onChange={refresh} />
-                ) : (
-                  <SimpleItemCard key={`${it.source}-${it.id}`} item={it} onChange={refresh} />
-                )
+      {view === "pipeline" ? (
+        <div className="relative">
+          <p className="mb-2 text-xs text-zinc-600">⟷ desliza para ver el resto de estados</p>
+          <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4">
+            {DRIVE_STATUSES.map((st) => {
+              const col = byStatus(st);
+              return (
+                <div key={st} className="w-80 shrink-0 snap-start">
+                  <div className="mb-2 flex items-center gap-2">
+                    <StatusPill status={st} size="sm" />
+                    <span className="text-xs text-zinc-500">{col.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {col.map((it) => (
+                      <ContentItemCard key={it.id} id={it.id} onChange={refreshAll} />
+                    ))}
+                    {col.length === 0 && (
+                      <div className="rounded border border-dashed border-edge p-3 text-center text-xs text-zinc-600">
+                        vacío
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="pointer-events-none absolute right-0 top-6 bottom-4 w-10 bg-gradient-to-l from-ink to-transparent" />
+        </div>
+      ) : (
+        <>
+        <div className="grid grid-cols-7 gap-1.5 text-center text-xs text-zinc-500">
+          {WEEKDAY_LABEL.map((w) => (
+            <div key={w} className="pb-1">{w}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {cells.map((dateStr, i) => {
+            if (!dateStr) return <div key={`empty-${i}`} />;
+            const dayItems = itemsByDate[dateStr] ?? [];
+            const isToday = dateStr === todayStr;
+            const isSelected = dateStr === selectedDate;
+            return (
+              <div
+                key={dateStr}
+                className={`group relative min-h-20 rounded-xl border p-1.5 text-left transition ${
+                  isSelected ? "border-brand bg-panel2" : isToday ? "border-brand/50 bg-panel" : "border-edge bg-panel hover:border-edge"
+                }`}
+              >
+                <button onClick={() => openDay(dateStr, false)} className="block w-full text-left">
+                  <div className={`text-xs ${isToday ? "font-semibold text-brand" : "text-zinc-500"}`}>{Number(dateStr.slice(-2))}</div>
+                  <div className="mt-1 space-y-0.5">
+                    {dayItems.slice(0, 3).map((it) => (
+                      <div
+                        key={`${it.source}-${it.id}`}
+                        className={`truncate rounded px-1 text-[10px] font-medium ${
+                          it.status === "subido" ? "bg-emerald-500/20 text-emerald-300"
+                          : it.status === "por_subir" ? "bg-brand/20 text-brand"
+                          : it.status === "editando" ? "bg-amber-500/20 text-amber-300"
+                          : "bg-zinc-700/60 text-zinc-300"
+                        }`}
+                      >
+                        {it.title}
+                      </div>
+                    ))}
+                    {dayItems.length > 3 && <div className="text-[10px] text-zinc-600">+{dayItems.length - 3} más</div>}
+                  </div>
+                </button>
+                <button
+                  onClick={() => openDay(dateStr, true)}
+                  title="Añadir publicación este día"
+                  className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-brand text-xs font-bold text-white opacity-0 shadow-[0_0_10px_-2px_rgba(59,130,246,0.8)] transition group-hover:flex group-hover:opacity-100"
+                >
+                  +
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {selectedDate && (
+          <div className="mt-4 space-y-3 rounded-xl border border-edge bg-panel p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">{selectedDate}</h3>
+              {!creatingDate && (
+                <button
+                  onClick={() => setCreatingDate(selectedDate)}
+                  className="rounded-lg border border-edge px-2.5 py-1 text-xs text-zinc-300 hover:border-brand hover:text-brand"
+                >
+                  ＋ Añadir publicación
+                </button>
               )}
             </div>
-          )}
-        </div>
+
+            {creatingDate && (
+              <CreateItemForm
+                date={creatingDate}
+                onCancel={() => setCreatingDate(null)}
+                onCreated={() => { setCreatingDate(null); refresh(); }}
+              />
+            )}
+
+            {(itemsByDate[selectedDate] ?? []).length === 0 && !creatingDate ? (
+              <p className="text-sm text-zinc-500">Nada programado este día.</p>
+            ) : (
+              <div className="space-y-2">
+                {(itemsByDate[selectedDate] ?? []).map((it) =>
+                  it.source === "content" ? (
+                    <ContentItemCard key={`content-${it.id}`} id={it.id} onChange={refresh} />
+                  ) : (
+                    <SimpleItemCard key={`${it.source}-${it.id}`} item={it} onChange={refresh} />
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        </>
       )}
     </div>
   );

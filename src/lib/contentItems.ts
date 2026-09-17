@@ -51,6 +51,19 @@ export function getContentItem(userId: number, id: number): ContentItem | null {
   );
 }
 
+// Para la vista "Pipeline" de /calendario: todas las publicaciones del
+// usuario sin acotar por fecha, para verlas agrupadas por estado (por_grabar,
+// editando...) sin importar cuándo estén programadas.
+export function listAllContentItems(userId: number): ContentItem[] {
+  return db
+    .prepare(
+      `SELECT ci.*, ${LINK_TITLE_SQL} FROM content_items ci
+       WHERE ci.user_id = ?
+       ORDER BY ci.scheduled_date ASC`
+    )
+    .all(userId) as ContentItem[];
+}
+
 // Para saber, desde /adaptados, si un guion concreto ya tiene una publicación
 // programada en el calendario (y con qué fecha/estado) antes de abrir el popup.
 export function listContentItemsByLink(userId: number, linkedType: string, linkedId: number): ContentItem[] {

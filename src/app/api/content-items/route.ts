@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { createContentItem, linkTargetOwnedBy, listContentItemsByLink } from "@/lib/contentItems";
+import { createContentItem, linkTargetOwnedBy, listContentItemsByLink, listAllContentItems } from "@/lib/contentItems";
 import { readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
+// Sin parámetros: todas las publicaciones del usuario (vista Pipeline de
+// /calendario). Con linkedType+linkedId: solo la(s) vinculada(s) a ese guion
+// (comprobación de "¿ya está programado?" desde /adaptados).
 export function GET(req: NextRequest) {
   const user = getUser(req);
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const linkedType = req.nextUrl.searchParams.get("linkedType");
   const linkedId = Number(req.nextUrl.searchParams.get("linkedId"));
+  if (!linkedType && !linkedId) return NextResponse.json({ items: listAllContentItems(user.id) });
   if (!linkedType || !linkedId) return NextResponse.json({ error: "Faltan parámetros" }, { status: 400 });
   return NextResponse.json({ items: listContentItemsByLink(user.id, linkedType, linkedId) });
 }
