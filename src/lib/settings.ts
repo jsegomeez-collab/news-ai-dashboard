@@ -15,13 +15,11 @@ export type UserSettings = {
   windowIntervalHours: number;
   competitorAdaptLimit: number; // guiones de competencia adaptados como máximo por día (UTC). 0 = sin tope.
   // Clonación con IA (HeyGen): avatar_id/voice_id elegidos de la cuenta del
-  // usuario. avatarKind distingue "avatar" (Studio/Instant) de "talking_photo"
-  // (Photo Avatar / Avatar IV) porque HeyGen los genera con formas de petición
-  // distintas. heygenDailyUsdCap es su propio tope, separado del de Anthropic
-  // (0 = sin tope), porque el coste por vídeo es de otro orden de magnitud.
+  // usuario (API v3: un único "look" por avatar, sin distinguir tipos).
+  // heygenDailyUsdCap es su propio tope, separado del de Anthropic (0 = sin
+  // tope), porque el coste por vídeo es de otro orden de magnitud.
   heygenKey: string;
   heygenAvatarId: string;
-  heygenAvatarKind: "avatar" | "talking_photo" | "";
   heygenAvatarLabel: string;
   heygenVoiceId: string;
   heygenVoiceLabel: string;
@@ -68,7 +66,6 @@ type Row = {
   competitor_adapt_limit: number;
   heygen_key: string;
   heygen_avatar_id: string;
-  heygen_avatar_kind: string;
   heygen_avatar_label: string;
   heygen_voice_id: string;
   heygen_voice_label: string;
@@ -103,7 +100,6 @@ export function readUserSettings(userId: number): UserSettings {
     competitorAdaptLimit: r.competitor_adapt_limit,
     heygenKey: r.heygen_key ?? "",
     heygenAvatarId: r.heygen_avatar_id ?? "",
-    heygenAvatarKind: (r.heygen_avatar_kind === "avatar" || r.heygen_avatar_kind === "talking_photo") ? r.heygen_avatar_kind : "",
     heygenAvatarLabel: r.heygen_avatar_label ?? "",
     heygenVoiceId: r.heygen_voice_id ?? "",
     heygenVoiceLabel: r.heygen_voice_label ?? "",
@@ -129,7 +125,6 @@ export function writeUserSettings(userId: number, p: Partial<UserSettings>): Use
     ["competitorAdaptLimit", "competitor_adapt_limit", (v) => clampInt(v, 0, 500)],
     ["heygenKey", "heygen_key", (v) => String(v ?? "").trim()],
     ["heygenAvatarId", "heygen_avatar_id", (v) => String(v ?? "").trim()],
-    ["heygenAvatarKind", "heygen_avatar_kind", (v) => (v === "avatar" || v === "talking_photo" ? v : "")],
     ["heygenAvatarLabel", "heygen_avatar_label", (v) => String(v ?? "").trim()],
     ["heygenVoiceId", "heygen_voice_id", (v) => String(v ?? "").trim()],
     ["heygenVoiceLabel", "heygen_voice_label", (v) => String(v ?? "").trim()],

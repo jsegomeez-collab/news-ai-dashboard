@@ -112,7 +112,6 @@ export async function queueAvatarVideo(
   try {
     const videoId = await createAvatarVideo(settings.heygenKey, {
       avatarId: settings.heygenAvatarId,
-      avatarKind: settings.heygenAvatarKind || "avatar",
       voiceId: settings.heygenVoiceId,
       text,
     });

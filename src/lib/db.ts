@@ -511,7 +511,6 @@ CREATE TABLE IF NOT EXISTS heygen_usage_log (
   for (const [col, def] of [
     ["heygen_key", "TEXT NOT NULL DEFAULT ''"],
     ["heygen_avatar_id", "TEXT NOT NULL DEFAULT ''"],
-    ["heygen_avatar_kind", "TEXT NOT NULL DEFAULT ''"], // 'avatar' | 'talking_photo'
     ["heygen_avatar_label", "TEXT NOT NULL DEFAULT ''"],
     ["heygen_voice_id", "TEXT NOT NULL DEFAULT ''"],
     ["heygen_voice_label", "TEXT NOT NULL DEFAULT ''"],

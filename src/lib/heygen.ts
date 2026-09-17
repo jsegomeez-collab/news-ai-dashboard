@@ -3,13 +3,13 @@
 // desatendido que corre en cron). Autenticación por API key fija, igual que
 // Anthropic/OpenAI/Apify en esta app.
 //
-// Formas de petición basadas en la API v2 pública de HeyGen (Create Avatar
-// Video V2 / List Avatars / List Voices / Video Status). No se ha podido
-// verificar contra la documentación en vivo durante el desarrollo de esta
-// integración — antes de dejarlo correr en automático, haz una prueba manual
-// con tu clave real (ver queueAvatarVideo) y ajusta los nombres de campo aquí
-// si HeyGen responde con un error de validación.
-
+// v3, verificado en vivo contra https://developers.heygen.com/llms.txt
+// (HeyGen publica esa guía explícitamente para agentes/LLMs) el 17/09/2026,
+// después de que una primera versión contra /v2 funcionara pero resultara ser
+// legacy (HeyGen la retira el 2026-10-31 y avisa de ello en la propia
+// respuesta de error). v3 unifica "avatar" y "talking photo" en un único
+// concepto de "look" con un solo avatar_id, así que ya no hace falta
+// distinguir tipos de avatar como en la v2.
 const HEYGEN_BASE = "https://api.heygen.com";
 
 async function heygenFetch<T>(apiKey: string, path: string, init: RequestInit = {}): Promise<T> {
@@ -18,56 +18,37 @@ async function heygenFetch<T>(apiKey: string, path: string, init: RequestInit = 
     headers: { "X-Api-Key": apiKey, "Content-Type": "application/json", ...(init.headers ?? {}) },
     signal: AbortSignal.timeout(60_000),
   });
-  const json = await res.json().catch(() => null) as { error?: { message?: string } | string; message?: string } | null;
+  const json = (await res.json().catch(() => null)) as {
+    error?: { message?: string } | string;
+    message?: string;
+  } | null;
   if (!res.ok || (json && json.error)) {
     const errMsg = typeof json?.error === "string" ? json.error : json?.error?.message;
     throw new Error((errMsg ?? json?.message ?? `HeyGen HTTP ${res.status}`).slice(0, 300));
   }
-  return json as T;
+  // v3 no envuelve siempre en {data: ...} igual que v2 — se acepta cualquiera
+  // de las dos formas en vez de asumir una sola.
+  return ((json as { data?: T })?.data ?? json) as T;
 }
 
-export type HeygenAvatarKind = "avatar" | "talking_photo";
+export type HeygenAvatarOption = { id: string; label: string; previewUrl: string | null };
+type RawLook = { id: string; name?: string; preview_image_url?: string; thumbnail_url?: string };
 
-export type HeygenAvatarOption = {
-  id: string;
-  kind: HeygenAvatarKind;
-  label: string;
-  previewUrl: string | null;
-};
-
-type RawAvatar = { avatar_id: string; avatar_name?: string; preview_image_url?: string };
-type RawTalkingPhoto = { talking_photo_id: string; talking_photo_name?: string; preview_image_url?: string };
-
-// Lista los avatares (Studio/Instant) Y los "talking photos" (Photo Avatar /
-// Avatar IV) de la cuenta conectada — HeyGen los separa en dos listas porque
-// se generan con una forma de petición distinta (ver createAvatarVideo), pero
-// de cara al usuario son "tus clones" y se muestran juntos en un único selector.
 export async function listAvatars(apiKey: string): Promise<HeygenAvatarOption[]> {
-  const json = await heygenFetch<{ data: { avatars?: RawAvatar[]; talking_photos?: RawTalkingPhoto[] } }>(
-    apiKey,
-    "/v2/avatars"
-  );
-  const avatars = (json.data.avatars ?? []).map((a) => ({
-    id: a.avatar_id,
-    kind: "avatar" as const,
-    label: a.avatar_name || a.avatar_id,
-    previewUrl: a.preview_image_url ?? null,
+  const json = await heygenFetch<{ looks?: RawLook[] }>(apiKey, "/v3/avatars/looks");
+  return (json.looks ?? []).map((l) => ({
+    id: l.id,
+    label: l.name || l.id,
+    previewUrl: l.preview_image_url ?? l.thumbnail_url ?? null,
   }));
-  const photos = (json.data.talking_photos ?? []).map((p) => ({
-    id: p.talking_photo_id,
-    kind: "talking_photo" as const,
-    label: p.talking_photo_name || p.talking_photo_id,
-    previewUrl: p.preview_image_url ?? null,
-  }));
-  return [...avatars, ...photos];
 }
 
 export type HeygenVoiceOption = { id: string; label: string; language: string | null; previewUrl: string | null };
 type RawVoice = { voice_id: string; name?: string; language?: string; preview_audio?: string };
 
 export async function listVoices(apiKey: string): Promise<HeygenVoiceOption[]> {
-  const json = await heygenFetch<{ data: { voices?: RawVoice[] } }>(apiKey, "/v2/voices");
-  return (json.data.voices ?? []).map((v) => ({
+  const json = await heygenFetch<{ voices?: RawVoice[] }>(apiKey, "/v3/voices");
+  return (json.voices ?? []).map((v) => ({
     id: v.voice_id,
     label: v.language ? `${v.name || v.voice_id} (${v.language})` : v.name || v.voice_id,
     language: v.language ?? null,
@@ -80,26 +61,20 @@ export async function listVoices(apiKey: string): Promise<HeygenVoiceOption[]> {
 // hay vídeo en la respuesta de esta llamada).
 export async function createAvatarVideo(
   apiKey: string,
-  opts: { avatarId: string; avatarKind: HeygenAvatarKind; voiceId: string; text: string; widthPx?: number; heightPx?: number }
+  opts: { avatarId: string; voiceId: string; text: string }
 ): Promise<string> {
-  const character =
-    opts.avatarKind === "talking_photo"
-      ? { type: "talking_photo", talking_photo_id: opts.avatarId }
-      : { type: "avatar", avatar_id: opts.avatarId, avatar_style: "normal" };
-
-  const json = await heygenFetch<{ data: { video_id: string } }>(apiKey, "/v2/video/generate", {
+  const json = await heygenFetch<{ video_id: string }>(apiKey, "/v3/videos", {
     method: "POST",
     body: JSON.stringify({
-      video_inputs: [
-        {
-          character,
-          voice: { type: "text", input_text: opts.text.slice(0, 1500), voice_id: opts.voiceId },
-        },
-      ],
-      dimension: { width: opts.widthPx ?? 720, height: opts.heightPx ?? 1280 },
+      type: "avatar",
+      avatar_id: opts.avatarId,
+      voice_id: opts.voiceId,
+      script: opts.text.slice(0, 1500),
+      aspect_ratio: "auto",
+      resolution: "1080p",
     }),
   });
-  return json.data.video_id;
+  return json.video_id;
 }
 
 export type HeygenVideoStatus = {
@@ -109,20 +84,20 @@ export type HeygenVideoStatus = {
   error: string | null;
 };
 
-// El check de estado vive en /v1 (no /v2) en la API real de HeyGen — no es un
-// error tipográfico, es así de raro.
 export async function getVideoStatus(apiKey: string, videoId: string): Promise<HeygenVideoStatus> {
   const json = await heygenFetch<{
-    data: { status: string; video_url?: string; duration?: number; error?: { message?: string } | null };
-  }>(apiKey, `/v1/video_status.get?video_id=${encodeURIComponent(videoId)}`);
-  const d = json.data;
+    status: string;
+    video_url?: string;
+    duration?: number;
+    error?: { message?: string } | string | null;
+  }>(apiKey, `/v3/videos/${encodeURIComponent(videoId)}`);
   const status: HeygenVideoStatus["status"] =
-    d.status === "completed" || d.status === "failed" || d.status === "pending" ? d.status : "processing";
+    json.status === "completed" || json.status === "failed" || json.status === "pending" ? json.status : "processing";
   return {
     status,
-    videoUrl: d.video_url ?? null,
-    durationSec: typeof d.duration === "number" ? d.duration : null,
-    error: d.error?.message ?? null,
+    videoUrl: json.video_url ?? null,
+    durationSec: typeof json.duration === "number" ? json.duration : null,
+    error: typeof json.error === "string" ? json.error : json.error?.message ?? null,
   };
 }
 

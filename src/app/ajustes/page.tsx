@@ -18,7 +18,6 @@ type Settings = {
   competitorAdaptLimit: number;
   hasHeygenKey: boolean;
   heygenAvatarId: string;
-  heygenAvatarKind: "avatar" | "talking_photo" | "";
   heygenAvatarLabel: string;
   heygenVoiceId: string;
   heygenVoiceLabel: string;
@@ -31,7 +30,7 @@ type Status = {
   heygenBudget: { videosToday: number; costToday: number; maxUsd: number };
   stats: { articles: number; classified: number; scripts: number; queuePending: number };
 };
-type HeygenAvatarOption = { id: string; kind: "avatar" | "talking_photo"; label: string; previewUrl: string | null };
+type HeygenAvatarOption = { id: string; label: string; previewUrl: string | null };
 type HeygenVoiceOption = { id: string; label: string; language: string | null };
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -162,7 +161,7 @@ export default function AjustesPage() {
     setLoadingHeygen(null);
   }
   function pickHeygenAvatar(a: HeygenAvatarOption) {
-    patch({ heygenAvatarId: a.id, heygenAvatarKind: a.kind, heygenAvatarLabel: a.label });
+    patch({ heygenAvatarId: a.id, heygenAvatarLabel: a.label });
   }
   function pickHeygenVoice(v: HeygenVoiceOption) {
     patch({ heygenVoiceId: v.id, heygenVoiceLabel: v.label });
@@ -304,7 +303,7 @@ export default function AjustesPage() {
                   <option value="">— elige un avatar —</option>
                   {heygenAvatars.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.label} {a.kind === "talking_photo" ? "(foto)" : ""}
+                      {a.label}
                     </option>
                   ))}
                 </select>
