@@ -13,6 +13,7 @@ export type UserSettings = {
   formats: ("reel" | "youtube")[];
   windowMinutes: number;
   windowIntervalHours: number;
+  competitorAdaptLimit: number; // videos de competencia a analizar+adaptar por ciclo. 0 = sin tope.
 };
 
 type Row = {
@@ -28,6 +29,7 @@ type Row = {
   formats: string;
   window_minutes: number;
   window_interval_hours: number;
+  competitor_adapt_limit: number;
 };
 
 function ensure(userId: number): void {
@@ -55,6 +57,7 @@ export function readUserSettings(userId: number): UserSettings {
       .filter((s): s is "reel" | "youtube" => s === "reel" || s === "youtube"),
     windowMinutes: r.window_minutes,
     windowIntervalHours: r.window_interval_hours,
+    competitorAdaptLimit: r.competitor_adapt_limit,
   };
 }
 
@@ -73,6 +76,7 @@ export function writeUserSettings(userId: number, p: Partial<UserSettings>): Use
     ["formats", "formats", (v) => (v as string[]).join(",")],
     ["windowMinutes", "window_minutes", (v) => clampInt(v, 0, 1440)],
     ["windowIntervalHours", "window_interval_hours", (v) => clampInt(v, 0, 24)],
+    ["competitorAdaptLimit", "competitor_adapt_limit", (v) => clampInt(v, 0, 500)],
   ];
   for (const [key, col, fn] of map) {
     if (p[key] !== undefined) {

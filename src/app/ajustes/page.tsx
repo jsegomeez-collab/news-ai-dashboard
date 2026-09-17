@@ -15,6 +15,7 @@ type Settings = {
   formats: ("reel" | "youtube")[];
   windowMinutes: number;
   windowIntervalHours: number;
+  competitorAdaptLimit: number;
 };
 type ModelOption = { id: string; label: string };
 type Status = {
@@ -280,6 +281,27 @@ export default function AjustesPage() {
             </label>
           </div>
         </div>
+      </Card>
+
+      <Card title="🕵️ Espionaje de competencia">
+        <p className="mb-3 text-xs text-zinc-500">
+          Cuántos videos de competencia ya transcritos se analizan y adaptan a guion por cada ciclo del worker
+          de fondo. Pon 0 para ilimitado (procesa todos los pendientes en cada ciclo).
+        </p>
+        <label className="text-sm text-zinc-300">
+          Tope de videos a adaptar por ciclo
+          <input
+            inputMode="numeric"
+            value={String(s.competitorAdaptLimit)}
+            onChange={(e) => patch({ competitorAdaptLimit: num(e.target.value) })}
+            className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200"
+          />
+        </label>
+        <p className="mt-2 text-xs text-zinc-600">
+          {s.competitorAdaptLimit === 0
+            ? "Ilimitado: cada ciclo procesa todos los videos pendientes de analizar."
+            : `Hasta ${s.competitorAdaptLimit} video(s) por ciclo. El botón "Actualizar ahora" en Competencia no usa este tope.`}
+        </p>
       </Card>
 
       {status && (

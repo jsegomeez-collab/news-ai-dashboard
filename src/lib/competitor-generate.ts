@@ -259,7 +259,11 @@ export async function processAnalysingVideos(
   userId?: number
 ): Promise<{ processed: number; errors: number; scriptsGenerated: number; noScriptCount: number }> {
   const scope = userId !== undefined ? ` AND ca.user_id = ?` : ``;
-  const params = userId !== undefined ? [userId, limit] : [limit];
+  // limit <= 0 = sin tope (configurable en Ajustes): sin cláusula LIMIT, procesa
+  // todos los videos en 'analysing' que haya.
+  const unlimited = limit <= 0;
+  const baseParams = userId !== undefined ? [userId] : [];
+  const params = unlimited ? baseParams : [...baseParams, limit];
   const rows = db
     .prepare(
       `SELECT cv.id, ca.user_id
@@ -267,7 +271,7 @@ export async function processAnalysingVideos(
        JOIN competitor_accounts ca ON ca.id = cv.account_id
        WHERE cv.status = 'analysing'${scope}
        ORDER BY cv.fetched_at ASC
-       LIMIT ?`
+       ${unlimited ? "" : "LIMIT ?"}`
     )
     .all(...(params as never[])) as { id: number; user_id: number }[];
 

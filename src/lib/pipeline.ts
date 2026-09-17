@@ -135,21 +135,37 @@ export async function runCycle(): Promise<CycleSummary> {
     base.inserted = poll.inserted;
     base.competitor = competitor;
 
-    // Fase 2: transcripción + análisis/generación (secuenciales, tras el descubrimiento).
+    // Fase 2: transcripción (secuencial, tras el descubrimiento).
     base.transcribed = await transcribePendingVideos(5).catch((e) => {
       console.warn("[cycle] transcripción falló:", (e as Error).message);
       competitorOk = false;
       return null;
     });
-    // Procesa videos ya transcritos (estado 'analysing') → análisis viral + guion adaptado.
-    const analysed = await processAnalysingVideos(3).catch((e) => {
-      console.warn("[cycle] análisis competencia falló:", (e as Error).message);
-      competitorOk = false;
-      return null;
-    });
-    if (analysed && analysed.noScriptCount > 0) {
+
+    const users = activeUserIds();
+    base.users = users.length;
+
+    // Procesa videos ya transcritos (estado 'analysing') → análisis viral + guion
+    // adaptado, respetando el tope POR USUARIO configurado en Ajustes (0 = sin
+    // tope). Antes era un único tope GLOBAL fijo de 3 compartido por todos los
+    // usuarios: uno con muchas cuentas activas podía acaparar el ciclo entero y
+    // dejar a los demás sin analizar nunca.
+    let analysedProcessed = 0, analysedNoScript = 0;
+    for (const userId of users) {
+      const cap = readUserSettings(userId).competitorAdaptLimit;
+      const r = await processAnalysingVideos(cap, userId).catch((e) => {
+        console.warn(`[cycle] análisis competencia u${userId}:`, (e as Error).message);
+        competitorOk = false;
+        return null;
+      });
+      if (r) {
+        analysedProcessed += r.processed;
+        analysedNoScript += r.noScriptCount;
+      }
+    }
+    if (analysedNoScript > 0) {
       console.warn(
-        `[cycle] competencia: ${analysed.noScriptCount}/${analysed.processed} video(s) analizados sin generar guion (revisa clave Anthropic / formatos por usuario)`
+        `[cycle] competencia: ${analysedNoScript}/${analysedProcessed} video(s) analizados sin generar guion (revisa clave Anthropic / formatos por usuario)`
       );
     }
 
@@ -161,9 +177,6 @@ export async function runCycle(): Promise<CycleSummary> {
     } catch (e) {
       console.warn("[cycle] limpieza de videos de competencia falló:", (e as Error).message);
     }
-
-    const users = activeUserIds();
-    base.users = users.length;
 
     for (const userId of users) {
       try {
