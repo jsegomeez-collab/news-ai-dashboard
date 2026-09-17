@@ -16,6 +16,28 @@ export type UserSettings = {
   competitorAdaptLimit: number; // guiones de competencia adaptados como máximo por día (UTC). 0 = sin tope.
 };
 
+// Versión de UserSettings segura para mandar al navegador: las claves reales
+// NUNCA salen de aquí — sk-ant-/sk-.../apify_api_... son secretos que se
+// facturan a la cuenta del usuario, así que aunque el input en Ajustes sea
+// type="password", devolverlas en el JSON las deja visibles en la pestaña
+// Red y en React DevTools sin que haga falta ni un XSS. Solo se manda si
+// cada una está configurada (booleano) — cero bytes del valor real.
+export type SafeUserSettings = Omit<UserSettings, "anthropicKey" | "openaiKey" | "apifyToken"> & {
+  hasAnthropicKey: boolean;
+  hasOpenaiKey: boolean;
+  hasApifyToken: boolean;
+};
+
+export function toSafeSettings(s: UserSettings): SafeUserSettings {
+  const { anthropicKey, openaiKey, apifyToken, ...rest } = s;
+  return {
+    ...rest,
+    hasAnthropicKey: anthropicKey.startsWith("sk-ant-"),
+    hasOpenaiKey: !!openaiKey,
+    hasApifyToken: !!apifyToken,
+  };
+}
+
 type Row = {
   anthropic_key: string;
   openai_key: string;

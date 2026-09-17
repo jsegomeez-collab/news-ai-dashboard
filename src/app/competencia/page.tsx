@@ -2,7 +2,7 @@
 import { useState, useCallback } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
 import type { CompetitorAccount, CompetitorVideo } from "@/lib/competitor";
-import { PLATFORM_ICON, fmt } from "@/lib/competitorUi";
+import { PLATFORM_ICON, fmt, safeHref } from "@/lib/competitorUi";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -161,7 +161,7 @@ function AccountCard({ account, onChanged }: { account: CompetitorAccount; onCha
             <span className="font-semibold text-white">@{account.handle}</span>
             {account.display_name && <span className="text-xs text-zinc-500">{account.display_name}</span>}
           </div>
-          <a href={account.url} target="_blank" rel="noreferrer" className="mt-0.5 text-xs text-zinc-500 hover:text-brand">{account.url}</a>
+          <a href={safeHref(account.url)} target="_blank" rel="noreferrer" className="mt-0.5 text-xs text-zinc-500 hover:text-brand">{account.url}</a>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs text-zinc-600">{account.video_count} videos</span>
@@ -241,7 +241,7 @@ function VideoCard({ video, selected, onToggleSelect, onDelete, deleting, onAnal
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <a href={video.video_url} target="_blank" rel="noreferrer"
+            <a href={safeHref(video.video_url)} target="_blank" rel="noreferrer"
               className="font-medium text-white hover:text-brand line-clamp-2">
               {video.title ?? video.video_url}
             </a>

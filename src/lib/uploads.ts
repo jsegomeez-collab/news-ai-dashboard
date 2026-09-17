@@ -21,9 +21,36 @@ const ALLOWED_EXT = new Set([
   ".mp4", ".mov", ".avi", ".mkv",
 ]);
 
+// El mime que declara el navegador al subir es un dato de entrada MÁS —
+// cualquiera puede mandar un archivo con contenido HTML/SVG declarando
+// "video/mp4" (el prefijo audio/video* no verifica nada del contenido real).
+// Por eso esta misma lista sirve para dos cosas: (1) aceptar razonablemente
+// el upload y (2) sobre todo, decidir en el momento de SERVIR el archivo si
+// el Content-Type guardado es de fiar — ver safeMediaContentType() más abajo.
+const SAFE_MEDIA_TYPES = new Set([
+  "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/wave",
+  "audio/mp4", "audio/x-m4a", "audio/aac", "audio/ogg", "audio/flac",
+  "audio/webm",
+  "video/mp4", "video/webm", "video/quicktime", "video/x-msvideo",
+  "video/x-matroska", "video/ogg",
+]);
+
 export function isAllowedMediaType(mime: string, filename: string): boolean {
+  if (SAFE_MEDIA_TYPES.has(mime)) return true;
   if (mime.startsWith("audio/") || mime.startsWith("video/")) return true;
   return ALLOWED_EXT.has(extname(filename).toLowerCase());
+}
+
+// Nunca hay que confiar en el mime guardado tal cual para servirlo de vuelta:
+// si no está en la lista de tipos reales conocidos, se sirve como descarga
+// genérica (application/octet-stream + Content-Disposition: attachment) para
+// que el navegador NUNCA lo renderice/ejecute inline, pase lo que pase con lo
+// que el que lo subió haya declarado. Aplica tanto a archivos nuevos como a
+// los que ya estaban guardados antes de este fix (la sanitización es en el
+// momento de servir, no depende de haber limpiado nada retroactivamente).
+export function safeMediaContentType(mime: string | null | undefined): { contentType: string; inline: boolean } {
+  if (mime && SAFE_MEDIA_TYPES.has(mime)) return { contentType: mime, inline: true };
+  return { contentType: "application/octet-stream", inline: false };
 }
 
 // Guarda el archivo subido con un nombre único (no el original, para no

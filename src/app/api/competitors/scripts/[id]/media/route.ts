@@ -3,7 +3,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { getUser } from "@/lib/auth";
 import { getScriptMedia, setScriptMedia, clearScriptMedia } from "@/lib/competitor";
-import { saveUpload, deleteUploadIfExists, isAllowedMediaType, MAX_UPLOAD_BYTES } from "@/lib/uploads";
+import { saveUpload, deleteUploadIfExists, isAllowedMediaType, safeMediaContentType, MAX_UPLOAD_BYTES } from "@/lib/uploads";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -74,8 +74,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   const stat = statSync(media.media_path);
-  const mime = media.media_mime || "application/octet-stream";
+  const { contentType, inline } = safeMediaContentType(media.media_mime);
   const filename = safeFilename(media.media_original_name || "media");
+  const disposition = `${inline ? "inline" : "attachment"}; filename="${filename}"`;
   const range = req.headers.get("range");
 
   if (range) {
@@ -92,8 +93,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         "Content-Range": `bytes ${start}-${end}/${stat.size}`,
         "Accept-Ranges": "bytes",
         "Content-Length": String(end - start + 1),
-        "Content-Type": mime,
-        "Content-Disposition": `inline; filename="${filename}"`,
+        "Content-Type": contentType,
+        "Content-Disposition": disposition,
       },
     });
   }
@@ -102,9 +103,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return new NextResponse(Readable.toWeb(nodeStream) as unknown as ReadableStream, {
     headers: {
       "Content-Length": String(stat.size),
-      "Content-Type": mime,
+      "Content-Type": contentType,
       "Accept-Ranges": "bytes",
-      "Content-Disposition": `inline; filename="${filename}"`,
+      "Content-Disposition": disposition,
     },
   });
 }

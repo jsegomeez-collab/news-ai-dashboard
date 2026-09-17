@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { listAccounts, createAccount } from "@/lib/competitor";
+import { listAccounts, createAccount, isValidAccountUrl } from "@/lib/competitor";
 import { readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
   }
   if (!body.handle?.trim()) return NextResponse.json({ error: "Falta el handle" }, { status: 400 });
   if (!body.url?.trim()) return NextResponse.json({ error: "Falta la URL del perfil" }, { status: 400 });
+  if (!isValidAccountUrl(body.platform, body.url)) {
+    return NextResponse.json({ error: `La URL debe ser un enlace real de ${body.platform}` }, { status: 400 });
+  }
 
   try {
     const id = createAccount(user.id, body as Required<typeof body>);
@@ -39,6 +42,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     const msg = (e as Error).message ?? "";
     if (msg.includes("UNIQUE")) return NextResponse.json({ error: "Ya tienes esa cuenta añadida" }, { status: 409 });
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.warn("[competitors] error al crear cuenta:", msg);
+    return NextResponse.json({ error: "No se pudo crear la cuenta" }, { status: 500 });
   }
 }

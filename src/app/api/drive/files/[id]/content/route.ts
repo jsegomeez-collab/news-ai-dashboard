@@ -3,6 +3,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { getUser } from "@/lib/auth";
 import { getFile } from "@/lib/drive";
+import { safeMediaContentType } from "@/lib/uploads";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +21,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!file || !existsSync(file.path)) return NextResponse.json({ error: "Sin archivo" }, { status: 404 });
 
   const stat = statSync(file.path);
-  const mime = file.mime || "application/octet-stream";
+  const { contentType, inline } = safeMediaContentType(file.mime);
   const filename = safeFilename(file.original_name);
+  const disposition = `${inline ? "inline" : "attachment"}; filename="${filename}"`;
   const range = req.headers.get("range");
 
   if (range) {
@@ -38,8 +40,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         "Content-Range": `bytes ${start}-${end}/${stat.size}`,
         "Accept-Ranges": "bytes",
         "Content-Length": String(end - start + 1),
-        "Content-Type": mime,
-        "Content-Disposition": `inline; filename="${filename}"`,
+        "Content-Type": contentType,
+        "Content-Disposition": disposition,
       },
     });
   }
@@ -48,9 +50,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return new NextResponse(Readable.toWeb(nodeStream) as unknown as ReadableStream, {
     headers: {
       "Content-Length": String(stat.size),
-      "Content-Type": mime,
+      "Content-Type": contentType,
       "Accept-Ranges": "bytes",
-      "Content-Disposition": `inline; filename="${filename}"`,
+      "Content-Disposition": disposition,
     },
   });
 }

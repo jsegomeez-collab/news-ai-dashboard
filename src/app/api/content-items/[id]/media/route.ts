@@ -3,7 +3,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { getUser } from "@/lib/auth";
 import { getContentItem, setContentItemMedia, clearContentItemMedia, type MediaSlot } from "@/lib/contentItems";
-import { saveUpload, deleteUploadIfExists, isAllowedMediaType, MAX_UPLOAD_BYTES } from "@/lib/uploads";
+import { saveUpload, deleteUploadIfExists, isAllowedMediaType, safeMediaContentType, MAX_UPLOAD_BYTES } from "@/lib/uploads";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -68,12 +68,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const item = getContentItem(user.id, Number(id));
   const path = slot === "audio" ? item?.audio_path : item?.video_path;
-  const mime = (slot === "audio" ? item?.audio_mime : item?.video_mime) || "application/octet-stream";
+  const rawMime = slot === "audio" ? item?.audio_mime : item?.video_mime;
   const originalName = (slot === "audio" ? item?.audio_original_name : item?.video_original_name) || "archivo";
   if (!item || !path || !existsSync(path)) return NextResponse.json({ error: "Sin archivo" }, { status: 404 });
 
   const stat = statSync(path);
+  const { contentType, inline } = safeMediaContentType(rawMime);
   const filename = safeFilename(originalName);
+  const disposition = `${inline ? "inline" : "attachment"}; filename="${filename}"`;
   const range = req.headers.get("range");
 
   if (range) {
@@ -90,8 +92,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         "Content-Range": `bytes ${start}-${end}/${stat.size}`,
         "Accept-Ranges": "bytes",
         "Content-Length": String(end - start + 1),
-        "Content-Type": mime,
-        "Content-Disposition": `inline; filename="${filename}"`,
+        "Content-Type": contentType,
+        "Content-Disposition": disposition,
       },
     });
   }
@@ -100,9 +102,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return new NextResponse(Readable.toWeb(nodeStream) as unknown as ReadableStream, {
     headers: {
       "Content-Length": String(stat.size),
-      "Content-Type": mime,
+      "Content-Type": contentType,
       "Accept-Ranges": "bytes",
-      "Content-Disposition": `inline; filename="${filename}"`,
+      "Content-Disposition": disposition,
     },
   });
 }

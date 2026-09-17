@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
 import type { CompetitorAccount, CompetitorScriptItem } from "@/lib/competitor";
-import { PLATFORM_ICON, PLATFORM_LABEL, fmt } from "@/lib/competitorUi";
+import { PLATFORM_ICON, PLATFORM_LABEL, fmt, safeHref } from "@/lib/competitorUi";
 import { buildScriptText } from "@/lib/scriptText";
 import { PipelineStepper } from "@/components/PipelineStepper";
 import { Modal } from "@/components/Modal";
@@ -386,7 +386,7 @@ function ScriptDoc({
 
           <div className="flex flex-wrap items-center gap-2">
             <a
-              href={s.video_url}
+              href={safeHref(s.video_url)}
               target="_blank"
               rel="noreferrer"
               className="rounded border border-edge px-2.5 py-1 text-xs text-zinc-300 hover:border-brand hover:text-brand"

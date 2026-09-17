@@ -106,6 +106,33 @@ export function getAccount(userId: number, accountId: number): CompetitorAccount
     .get(accountId, userId) as CompetitorAccount | undefined) ?? null;
 }
 
+// La URL del perfil se guarda tal cual y luego se pasa DIRECTAMENTE a yt-dlp
+// (youtube/tiktok) como argumento — yt-dlp es un fetcher genérico de URLs, así
+// que sin esto cualquiera podría dar de alta una "cuenta" con
+// http://169.254.169.254/... o http://localhost:<puerto interno>/... y hacer
+// que el worker de fondo la solicite server-side (SSRF). También evita que un
+// esquema no-http (javascript:, data:...) acabe en un <a href> renderizado en
+// /competencia (list_accounts se muestra tal cual, sin filtrar el esquema ahí).
+const PLATFORM_HOSTS: Record<string, string[]> = {
+  youtube: ["youtube.com", "youtu.be"],
+  tiktok: ["tiktok.com"],
+  instagram: ["instagram.com"],
+};
+
+export function isValidAccountUrl(platform: string, url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+  const hosts = PLATFORM_HOSTS[platform];
+  if (!hosts) return false;
+  const hostname = parsed.hostname.toLowerCase();
+  return hosts.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+}
+
 export function createAccount(
   userId: number,
   data: {
@@ -119,6 +146,9 @@ export function createAccount(
     check_interval_hours?: number;
   }
 ): number {
+  if (!isValidAccountUrl(data.platform, data.url)) {
+    throw new Error(`URL inválida para ${data.platform}: debe ser un enlace http(s) real de esa plataforma`);
+  }
   const res = db
     .prepare(
       `INSERT INTO competitor_accounts(user_id, platform, handle, url, display_name, min_views, min_likes, min_comments, check_interval_hours, created_at)

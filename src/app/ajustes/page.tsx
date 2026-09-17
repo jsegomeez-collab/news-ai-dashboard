@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import { usePoll } from "@/components/usePoll";
 
 type Settings = {
-  anthropicKey: string;
-  openaiKey: string;
-  apifyToken: string;
+  hasAnthropicKey: boolean;
+  hasOpenaiKey: boolean;
+  hasApifyToken: boolean;
   genModel: string;
   autoGenerate: boolean;
   genRelevanceThreshold: number;
@@ -56,9 +56,9 @@ export default function AjustesPage() {
     const json = (await res.json()) as { settings: Settings; modelOptions: ModelOption[] };
     setS(json.settings);
     setOpts(json.modelOptions);
-    setKeyInput(json.settings.anthropicKey);
-    setOaiKeyInput(json.settings.openaiKey);
-    setApifyInput(json.settings.apifyToken);
+    // Las claves NUNCA vuelven del servidor (solo hasXKey) — los campos
+    // arrancan vacíos siempre; escribir algo y guardar es la única forma de
+    // cambiarlas, nunca se precargan con el valor real.
   }
   useEffect(() => {
     load();
@@ -74,18 +74,43 @@ export default function AjustesPage() {
     });
   }
 
+  // Las tres claves se guardan aparte de patch(): el body que se envía SÍ
+  // lleva el valor real (anthropicKey/openaiKey/apifyToken, campos que ya no
+  // existen en el tipo Settings del cliente), pero la respuesta del servidor
+  // solo trae hasXKey — nunca se vuelve a meter el secreto en el estado.
   async function saveKey() {
-    await patch({ anthropicKey: keyInput });
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ anthropicKey: keyInput }),
+    });
+    const json = (await res.json()) as { settings: Settings };
+    setS(json.settings);
+    setKeyInput("");
     setSavedKey(true);
     setTimeout(() => setSavedKey(false), 1500);
   }
   async function saveOaiKey() {
-    await patch({ openaiKey: oaiKeyInput });
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openaiKey: oaiKeyInput }),
+    });
+    const json = (await res.json()) as { settings: Settings };
+    setS(json.settings);
+    setOaiKeyInput("");
     setSavedOaiKey(true);
     setTimeout(() => setSavedOaiKey(false), 1500);
   }
   async function saveApify() {
-    await patch({ apifyToken: apifyInput });
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apifyToken: apifyInput }),
+    });
+    const json = (await res.json()) as { settings: Settings };
+    setS(json.settings);
+    setApifyInput("");
     setSavedApify(true);
     setTimeout(() => setSavedApify(false), 1500);
   }
@@ -100,7 +125,7 @@ export default function AjustesPage() {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <Card title={`Tu clave de Anthropic ${savedKey ? "· guardada ✓" : ""}`}>
+      <Card title={`Tu clave de Anthropic ${savedKey ? "· guardada ✓" : s.hasAnthropicKey ? "· configurada ✓" : ""}`}>
         <p className="mb-2 text-sm text-zinc-400">
           Tu consumo se carga a TU cuenta de Anthropic. Consíguela en{" "}
           <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" className="text-brand hover:underline">
@@ -113,7 +138,7 @@ export default function AjustesPage() {
             type="password"
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
-            placeholder="sk-ant-..."
+            placeholder={s.hasAnthropicKey ? "•••••••••••• (escribe para cambiarla)" : "sk-ant-..."}
             className="flex-1 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand"
           />
           <button onClick={saveKey} className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white">
@@ -125,7 +150,7 @@ export default function AjustesPage() {
         </p>
       </Card>
 
-      <Card title={`OpenAI (transcripción) ${savedOaiKey ? "· guardada ✓" : ""}`}>
+      <Card title={`OpenAI (transcripción) ${savedOaiKey ? "· guardada ✓" : s.hasOpenaiKey ? "· configurada ✓" : ""}`}>
         <p className="mb-2 text-sm text-zinc-400">
           Para transcribir reels y TikToks de la competencia via Whisper. Consíguela en{" "}
           <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-brand hover:underline">
@@ -138,7 +163,7 @@ export default function AjustesPage() {
             type="password"
             value={oaiKeyInput}
             onChange={(e) => setOaiKeyInput(e.target.value)}
-            placeholder="sk-..."
+            placeholder={s.hasOpenaiKey ? "•••••••••••• (escribe para cambiarla)" : "sk-..."}
             className="flex-1 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand"
           />
           <button onClick={saveOaiKey} className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white">
@@ -150,7 +175,7 @@ export default function AjustesPage() {
         </p>
       </Card>
 
-      <Card title={`Instagram (Apify) ${savedApify ? "· guardado ✓" : ""}`}>
+      <Card title={`Instagram (Apify) ${savedApify ? "· guardado ✓" : s.hasApifyToken ? "· configurado ✓" : ""}`}>
         <p className="mb-2 text-sm text-zinc-400">
           Instagram bloquea el scraping directo desde servidores. Apify lo hace de forma
           segura con proxies residenciales (no expone tu IP ni ninguna cuenta). Consigue tu token en{" "}
@@ -164,7 +189,7 @@ export default function AjustesPage() {
             type="password"
             value={apifyInput}
             onChange={(e) => setApifyInput(e.target.value)}
-            placeholder="apify_api_..."
+            placeholder={s.hasApifyToken ? "•••••••••••• (escribe para cambiarlo)" : "apify_api_..."}
             className="flex-1 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand"
           />
           <button onClick={saveApify} className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white">
