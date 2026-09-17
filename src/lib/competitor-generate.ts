@@ -205,7 +205,17 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
 // Sin userId: todos los usuarios (worker de fondo). Con userId: solo los de
 // ese usuario (endpoints HTTP por-usuario, para no gastar el presupuesto de
 // otros usuarios como efecto colateral de un botón individual).
-export async function processAnalysingVideos(limit = 3, userId?: number): Promise<{ processed: number; errors: number }> {
+//
+// `processed` cuenta videos cuyo ANÁLISIS salió bien (puede ser 0 guiones
+// generados si la fase de generación falla para todos los formatos —
+// analyseAndAdapt devuelve ok:true igualmente). `scriptsGenerated` es el
+// número real de guiones adaptados creados; `noScriptCount` son videos
+// analizados sin ni un guion, señal de que la generación está fallando en
+// silencio aunque el análisis vaya bien.
+export async function processAnalysingVideos(
+  limit = 3,
+  userId?: number
+): Promise<{ processed: number; errors: number; scriptsGenerated: number; noScriptCount: number }> {
   const scope = userId !== undefined ? ` AND ca.user_id = ?` : ``;
   const params = userId !== undefined ? [userId, limit] : [limit];
   const rows = db
@@ -219,11 +229,19 @@ export async function processAnalysingVideos(limit = 3, userId?: number): Promis
     )
     .all(...(params as never[])) as { id: number; user_id: number }[];
 
-  let processed = 0, errors = 0;
+  let processed = 0, errors = 0, scriptsGenerated = 0, noScriptCount = 0;
   for (const { id, user_id } of rows) {
     const r = await analyseAndAdapt(user_id, id);
-    if (r.ok) processed++;
-    else errors++;
+    if (r.ok) {
+      processed++;
+      scriptsGenerated += r.generated;
+      if (r.generated === 0) {
+        noScriptCount++;
+        console.warn(`[comp-gen] video ${id}: análisis OK pero 0 guiones generados (revisa formatos/clave en Ajustes)`);
+      }
+    } else {
+      errors++;
+    }
   }
-  return { processed, errors };
+  return { processed, errors, scriptsGenerated, noScriptCount };
 }

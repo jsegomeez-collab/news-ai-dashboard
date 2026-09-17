@@ -49,10 +49,21 @@ export async function POST(req: NextRequest) {
     const analyseResult = await processAnalysingVideos(10, user.id);
     result.analysed = analyseResult.processed;
     result.analyseErrors = analyseResult.errors;
+    // ¡OJO! "analysed" es cuántos videos completaron el ANÁLISIS, no cuántos
+    // guiones se generaron — un video se puede analizar bien y aun así
+    // quedarse sin guion si la fase de generación falla para todos sus
+    // formatos. Antes esto se mostraba (mal) como "guiones generados".
+    result.scriptsGenerated = analyseResult.scriptsGenerated;
+    result.noScriptCount = analyseResult.noScriptCount;
   }
 
+  const noScriptWarning =
+    mode === "full" && (result.noScriptCount as number) > 0
+      ? ` ⚠ ${result.noScriptCount} video(s) analizados sin generar guion — revisa tu clave de Anthropic y los formatos activos en Ajustes.`
+      : "";
+
   result.summary = mode === "full"
-    ? `${pending} pendientes, ${analysing} en análisis → ${result.transcribed} transcritos, ${result.analysed ?? 0} guiones generados`
+    ? `${pending} pendientes, ${analysing} en análisis → ${result.transcribed} transcritos, ${result.analysed ?? 0} analizados, ${result.scriptsGenerated ?? 0} guiones generados.${noScriptWarning}`
     : `${pending} pendientes → ${result.transcribed} transcritos`;
 
   return NextResponse.json(result);

@@ -142,10 +142,16 @@ export async function runCycle(): Promise<CycleSummary> {
       return null;
     });
     // Procesa videos ya transcritos (estado 'analysing') → análisis viral + guion adaptado.
-    await processAnalysingVideos(3).catch((e) => {
+    const analysed = await processAnalysingVideos(3).catch((e) => {
       console.warn("[cycle] análisis competencia falló:", (e as Error).message);
       competitorOk = false;
+      return null;
     });
+    if (analysed && analysed.noScriptCount > 0) {
+      console.warn(
+        `[cycle] competencia: ${analysed.noScriptCount}/${analysed.processed} video(s) analizados sin generar guion (revisa clave Anthropic / formatos por usuario)`
+      );
+    }
 
     // Limpieza: videos transcritos que llevan 60+ días sin terminar de
     // analizarse (atascados/fallidos) — no acumular basura sin límite.
