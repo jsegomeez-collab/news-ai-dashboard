@@ -267,9 +267,23 @@ function SimpleItemCard({ item, onChange }: { item: CalendarItem; onChange: () =
 
 // ─── Formulario de nueva publicación ──────────────────────────────────────────
 
-function CreateItemForm({ date, onCreated, onCancel }: { date: string; onCreated: () => void; onCancel: () => void }) {
+// fixedDate: se usa desde el "+" de un día del grid mensual (fecha ya decidida,
+// se muestra como texto). Sin fixedDate (desde una columna del Pipeline) se
+// muestra un <input type="date"> editable, porque ahí no hay un día de partida.
+function CreateItemForm({
+  fixedDate,
+  initialStatus = "por_grabar",
+  onCreated,
+  onCancel,
+}: {
+  fixedDate?: string;
+  initialStatus?: string;
+  onCreated: () => void;
+  onCancel: () => void;
+}) {
   const [link, setLink] = useState<LinkTargetLite | null>(null);
   const [title, setTitle] = useState("");
+  const [date, setDate] = useState(fixedDate ?? new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -289,6 +303,7 @@ function CreateItemForm({ date, onCreated, onCancel }: { date: string; onCreated
           linkedId: link?.id ?? null,
           title: link ? null : title,
           scheduledDate: date,
+          status: initialStatus,
         }),
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
@@ -303,12 +318,14 @@ function CreateItemForm({ date, onCreated, onCancel }: { date: string; onCreated
 
   return (
     <div className="space-y-2 rounded-xl border border-brand/50 bg-panel p-3">
-      <p className="text-xs font-medium text-zinc-300">➕ Nueva publicación — {date}</p>
+      <p className="text-xs font-medium text-zinc-300">
+        ➕ Nueva publicación{fixedDate ? ` — ${fixedDate}` : ""}
+      </p>
       <LinkPicker
         current={link ? { type: link.type, title: link.title } : null}
         onLink={(t) => setLink(t)}
         onUnlink={() => setLink(null)}
-        placeholder="Buscar guion (o escribe un título manual abajo)…"
+        placeholder="Buscar guion (adaptado o propio) o escribe un título manual abajo…"
       />
       {!link && (
         <input
@@ -317,6 +334,17 @@ function CreateItemForm({ date, onCreated, onCancel }: { date: string; onCreated
           placeholder="…o ponle un título manual"
           className="w-full rounded-lg border border-edge bg-ink px-2 py-1.5 text-xs text-zinc-200 outline-none focus:border-brand"
         />
+      )}
+      {!fixedDate && (
+        <label className="block text-xs text-zinc-500">
+          Fecha
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-edge bg-ink px-2 py-1.5 text-xs text-zinc-200"
+          />
+        </label>
       )}
       {error && <p className="text-xs text-red-400">{error}</p>}
       <div className="flex justify-end gap-3">
@@ -342,6 +370,7 @@ export default function CalendarioPage() {
   const [monthIndex, setMonthIndex] = useState(now.getMonth()); // 0-11
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [creatingDate, setCreatingDate] = useState<string | null>(null);
+  const [creatingStatus, setCreatingStatus] = useState<string | null>(null);
 
   const monthParam = `${year}-${pad2(monthIndex + 1)}`;
   const { data, refresh } = usePoll<{ items: CalendarItem[] }>(`/api/calendar?month=${monthParam}`, 30000);
@@ -438,12 +467,26 @@ export default function CalendarioPage() {
                   <div className="mb-2 flex items-center gap-2">
                     <StatusPill status={st} size="sm" />
                     <span className="text-xs text-zinc-500">{col.length}</span>
+                    <button
+                      onClick={() => setCreatingStatus(creatingStatus === st ? null : st)}
+                      title="Añadir guion en este estado"
+                      className="ml-auto flex h-5 w-5 items-center justify-center rounded-full border border-edge text-xs text-zinc-400 hover:border-brand hover:text-brand"
+                    >
+                      +
+                    </button>
                   </div>
                   <div className="space-y-2">
+                    {creatingStatus === st && (
+                      <CreateItemForm
+                        initialStatus={st}
+                        onCancel={() => setCreatingStatus(null)}
+                        onCreated={() => { setCreatingStatus(null); refreshAll(); }}
+                      />
+                    )}
                     {col.map((it) => (
                       <ContentItemCard key={it.id} id={it.id} onChange={refreshAll} />
                     ))}
-                    {col.length === 0 && (
+                    {col.length === 0 && creatingStatus !== st && (
                       <div className="rounded border border-dashed border-edge p-3 text-center text-xs text-zinc-600">
                         vacío
                       </div>
@@ -522,9 +565,9 @@ export default function CalendarioPage() {
 
             {creatingDate && (
               <CreateItemForm
-                date={creatingDate}
+                fixedDate={creatingDate}
                 onCancel={() => setCreatingDate(null)}
-                onCreated={() => { setCreatingDate(null); refresh(); }}
+                onCreated={() => { setCreatingDate(null); refresh(); refreshAll(); }}
               />
             )}
 
