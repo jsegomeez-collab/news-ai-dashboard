@@ -55,15 +55,20 @@ export async function POST(req: NextRequest) {
     // formatos. Antes esto se mostraba (mal) como "guiones generados".
     result.scriptsGenerated = analyseResult.scriptsGenerated;
     result.noScriptCount = analyseResult.noScriptCount;
+    result.cappedSkipped = analyseResult.cappedSkipped;
   }
 
   const noScriptWarning =
     mode === "full" && (result.noScriptCount as number) > 0
       ? ` ⚠ ${result.noScriptCount} video(s) analizados sin generar guion — revisa tu clave de Anthropic y los formatos activos en Ajustes.`
       : "";
+  const cappedWarning =
+    mode === "full" && (result.cappedSkipped as number) > 0
+      ? ` ⏸ ${result.cappedSkipped} video(s) en espera por el tope diario de guiones adaptados (Ajustes) — se reanudan a medianoche UTC.`
+      : "";
 
   result.summary = mode === "full"
-    ? `${pending} pendientes, ${analysing} en análisis → ${result.transcribed} transcritos, ${result.analysed ?? 0} analizados, ${result.scriptsGenerated ?? 0} guiones generados.${noScriptWarning}`
+    ? `${pending} pendientes, ${analysing} en análisis → ${result.transcribed} transcritos, ${result.analysed ?? 0} analizados, ${result.scriptsGenerated ?? 0} guiones generados.${noScriptWarning}${cappedWarning}`
     : `${pending} pendientes → ${result.transcribed} transcritos`;
 
   return NextResponse.json(result);

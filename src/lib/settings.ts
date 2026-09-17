@@ -13,7 +13,7 @@ export type UserSettings = {
   formats: ("reel" | "youtube")[];
   windowMinutes: number;
   windowIntervalHours: number;
-  competitorAdaptLimit: number; // videos de competencia a analizar+adaptar por ciclo. 0 = sin tope.
+  competitorAdaptLimit: number; // guiones de competencia adaptados como máximo por día (UTC). 0 = sin tope.
 };
 
 type Row = {

@@ -411,8 +411,8 @@ CREATE TABLE IF NOT EXISTS worker_heartbeat (
     r.exec(`ALTER TABLE user_settings ADD COLUMN apify_token TEXT NOT NULL DEFAULT ''`);
     console.log("[db] columna apify_token añadida a user_settings");
   }
-  // Tope de videos de competencia a analizar+adaptar por ciclo del worker,
-  // por usuario. Mismo criterio que window_minutes/window_interval_hours: 0 = sin tope.
+  // Tope DIARIO (medianoche UTC) de guiones de competencia adaptados, por
+  // usuario. Mismo criterio que window_minutes/window_interval_hours: 0 = sin tope.
   if (!cols.some((c) => c.name === "competitor_adapt_limit")) {
     r.exec(`ALTER TABLE user_settings ADD COLUMN competitor_adapt_limit INTEGER NOT NULL DEFAULT 3`);
     console.log("[db] columna competitor_adapt_limit añadida a user_settings");

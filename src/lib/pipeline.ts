@@ -146,14 +146,15 @@ export async function runCycle(): Promise<CycleSummary> {
     base.users = users.length;
 
     // Procesa videos ya transcritos (estado 'analysing') → análisis viral + guion
-    // adaptado, respetando el tope POR USUARIO configurado en Ajustes (0 = sin
-    // tope). Antes era un único tope GLOBAL fijo de 3 compartido por todos los
-    // usuarios: uno con muchas cuentas activas podía acaparar el ciclo entero y
-    // dejar a los demás sin analizar nunca.
-    let analysedProcessed = 0, analysedNoScript = 0;
+    // adaptado, por usuario (antes era una única llamada global: uno con muchas
+    // cuentas activas podía acaparar el ciclo entero y dejar a otros sin
+    // analizar nunca). CICLOS_BATCH es solo un tope TÉCNICO para no alargar el
+    // ciclo por usuario — el tope DIARIO real (Ajustes, 0 = ilimitado) lo aplica
+    // analyseAndAdapt() por su cuenta y por igual en las tres vías de generación.
+    const CYCLE_BATCH = 3;
+    let analysedProcessed = 0, analysedNoScript = 0, analysedCapped = 0;
     for (const userId of users) {
-      const cap = readUserSettings(userId).competitorAdaptLimit;
-      const r = await processAnalysingVideos(cap, userId).catch((e) => {
+      const r = await processAnalysingVideos(CYCLE_BATCH, userId).catch((e) => {
         console.warn(`[cycle] análisis competencia u${userId}:`, (e as Error).message);
         competitorOk = false;
         return null;
@@ -161,12 +162,16 @@ export async function runCycle(): Promise<CycleSummary> {
       if (r) {
         analysedProcessed += r.processed;
         analysedNoScript += r.noScriptCount;
+        analysedCapped += r.cappedSkipped;
       }
     }
     if (analysedNoScript > 0) {
       console.warn(
         `[cycle] competencia: ${analysedNoScript}/${analysedProcessed} video(s) analizados sin generar guion (revisa clave Anthropic / formatos por usuario)`
       );
+    }
+    if (analysedCapped > 0) {
+      console.log(`[cycle] competencia: ${analysedCapped} video(s) en espera por tope diario de guiones adaptados (Ajustes)`);
     }
 
     // Limpieza: videos transcritos que llevan 60+ días sin terminar de

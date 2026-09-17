@@ -285,11 +285,11 @@ export default function AjustesPage() {
 
       <Card title="🕵️ Espionaje de competencia">
         <p className="mb-3 text-xs text-zinc-500">
-          Cuántos videos de competencia ya transcritos se analizan y adaptan a guion por cada ciclo del worker
-          de fondo. Pon 0 para ilimitado (procesa todos los pendientes en cada ciclo).
+          Cuántos guiones de competencia como máximo se pueden adaptar en un día. Se resetea a medianoche
+          (UTC) — al llegar al tope, los videos pendientes quedan en espera hasta entonces. Pon 0 para ilimitado.
         </p>
         <label className="text-sm text-zinc-300">
-          Tope de videos a adaptar por ciclo
+          Tope de guiones adaptados por día
           <input
             inputMode="numeric"
             value={String(s.competitorAdaptLimit)}
@@ -299,8 +299,8 @@ export default function AjustesPage() {
         </label>
         <p className="mt-2 text-xs text-zinc-600">
           {s.competitorAdaptLimit === 0
-            ? "Ilimitado: cada ciclo procesa todos los videos pendientes de analizar."
-            : `Hasta ${s.competitorAdaptLimit} video(s) por ciclo. El botón "Actualizar ahora" en Competencia no usa este tope.`}
+            ? "Ilimitado: se adaptan todos los videos pendientes, sin tope diario."
+            : `Hasta ${s.competitorAdaptLimit} guion(es) adaptado(s) al día, cuenten el ciclo automático, "Actualizar ahora" o el botón manual por video.`}
         </p>
       </Card>
 

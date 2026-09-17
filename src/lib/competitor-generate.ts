@@ -1,7 +1,7 @@
 import { client, recordUsage, firstText, parseJsonFromText } from "./anthropic";
 import { buildBrain } from "./brand";
 import { readUserSettings } from "./settings";
-import { getVideo, saveAnalysis, saveAdaptedScript, setVideoStatus } from "./competitor";
+import { getVideo, saveAnalysis, saveAdaptedScript, setVideoStatus, competitorScriptsToday } from "./competitor";
 import { db } from "./db";
 
 // ─── Análisis viral ───────────────────────────────────────────────────────────
@@ -132,6 +132,7 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
   ok: boolean;
   generated: number;
   error?: string;
+  capped?: boolean; // true si se saltó por el tope DIARIO de Ajustes (no es un fallo real)
 }> {
   const video = getVideo(userId, videoId);
   if (!video) return { ok: false, generated: 0, error: "Video no encontrado" };
@@ -140,6 +141,23 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
   const settings = readUserSettings(userId);
   if (!settings.anthropicKey.startsWith("sk-ant-")) {
     return { ok: false, generated: 0, error: "Configura tu clave de Anthropic en Ajustes." };
+  }
+
+  // Tope DIARIO de guiones adaptados de competencia (Ajustes → Espionaje de
+  // competencia, 0 = sin tope). Se comprueba aquí porque este es el único
+  // punto por el que pasan las TRES vías de generación (ciclo automático,
+  // botón "Actualizar ahora" y botón manual por video) — el video se queda en
+  // 'analysing' y se retoma solo cuando el tope resetee a medianoche UTC.
+  if (settings.competitorAdaptLimit > 0) {
+    const doneToday = competitorScriptsToday(userId);
+    if (doneToday >= settings.competitorAdaptLimit) {
+      return {
+        ok: false,
+        generated: 0,
+        capped: true,
+        error: `Tope diario de guiones adaptados alcanzado (${doneToday}/${settings.competitorAdaptLimit}). Se resetea a medianoche (UTC) — o ajústalo en Ajustes.`,
+      };
+    }
   }
 
   const model = settings.genModel;
@@ -244,6 +262,12 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
 
 // ─── Pipeline masivo: analizar y adaptar TODOS los videos en estado 'analysing' ──
 
+// `limit` es un tope TÉCNICO de cuántos videos se intentan en esta llamada
+// (evitar que un ciclo/request se alargue demasiado) — no tiene relación con
+// el tope DIARIO de Ajustes, que se aplica dentro de analyseAndAdapt() y
+// aplica por igual a las tres vías de generación (ciclo, "Actualizar ahora"
+// y botón manual por video).
+//
 // Sin userId: todos los usuarios (worker de fondo). Con userId: solo los de
 // ese usuario (endpoints HTTP por-usuario, para no gastar el presupuesto de
 // otros usuarios como efecto colateral de un botón individual).
@@ -253,14 +277,13 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
 // analyseAndAdapt devuelve ok:true igualmente). `scriptsGenerated` es el
 // número real de guiones adaptados creados; `noScriptCount` son videos
 // analizados sin ni un guion, señal de que la generación está fallando en
-// silencio aunque el análisis vaya bien.
+// silencio aunque el análisis vaya bien. `cappedSkipped` son videos que ni
+// se intentaron por haber alcanzado ya el tope diario (no cuenta como error).
 export async function processAnalysingVideos(
   limit = 3,
   userId?: number
-): Promise<{ processed: number; errors: number; scriptsGenerated: number; noScriptCount: number }> {
+): Promise<{ processed: number; errors: number; scriptsGenerated: number; noScriptCount: number; cappedSkipped: number }> {
   const scope = userId !== undefined ? ` AND ca.user_id = ?` : ``;
-  // limit <= 0 = sin tope (configurable en Ajustes): sin cláusula LIMIT, procesa
-  // todos los videos en 'analysing' que haya.
   const unlimited = limit <= 0;
   const baseParams = userId !== undefined ? [userId] : [];
   const params = unlimited ? baseParams : [...baseParams, limit];
@@ -275,9 +298,13 @@ export async function processAnalysingVideos(
     )
     .all(...(params as never[])) as { id: number; user_id: number }[];
 
-  let processed = 0, errors = 0, scriptsGenerated = 0, noScriptCount = 0;
+  let processed = 0, errors = 0, scriptsGenerated = 0, noScriptCount = 0, cappedSkipped = 0;
   for (const { id, user_id } of rows) {
     const r = await analyseAndAdapt(user_id, id);
+    if (r.capped) {
+      cappedSkipped++;
+      continue;
+    }
     if (r.ok) {
       processed++;
       scriptsGenerated += r.generated;
@@ -289,5 +316,5 @@ export async function processAnalysingVideos(
       errors++;
     }
   }
-  return { processed, errors, scriptsGenerated, noScriptCount };
+  return { processed, errors, scriptsGenerated, noScriptCount, cappedSkipped };
 }

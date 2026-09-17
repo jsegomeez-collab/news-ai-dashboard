@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { deleteUploadIfExists } from "./uploads";
+import { todayUTC } from "./env";
 
 export type CompetitorAccount = {
   id: number;
@@ -399,6 +400,17 @@ export function saveAdaptedScript(
     )
     .run(videoId, userId, format, out.title, out.hook, out.puente ?? null, out.body, out.cta, out.adaptation_notes ?? null, model, new Date().toISOString());
   return Number(res.lastInsertRowid);
+}
+
+// Guiones adaptados de competencia ya generados HOY (medianoche UTC), para el
+// tope diario configurable en Ajustes — mismo criterio de "día" que budget.ts
+// usa para el tope de guiones normales (día UTC, no local).
+export function competitorScriptsToday(userId: number): number {
+  const day = todayUTC();
+  const row = db
+    .prepare(`SELECT COUNT(*) as n FROM competitor_scripts WHERE user_id = ? AND substr(created_at, 1, 10) = ?`)
+    .get(userId, day) as { n: number };
+  return row.n;
 }
 
 // ─── Adapted scripts ──────────────────────────────────────────────────────────
