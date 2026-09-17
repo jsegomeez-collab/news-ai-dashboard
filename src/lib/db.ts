@@ -339,6 +339,33 @@ CREATE TABLE IF NOT EXISTS drive_files (
 CREATE INDEX IF NOT EXISTS idx_drive_files_folder ON drive_files(user_id, folder_id);
 CREATE INDEX IF NOT EXISTS idx_drive_files_sched   ON drive_files(user_id, scheduled_date);
 
+-- ===== CALENDARIO: una publicación = guion + audio (tu voz) + video (ya
+-- clonado con IA) + fecha + estado, todo junto y creable de un tirón desde
+-- el "+" del día en /calendario. Es un objeto propio (no un drive_file más)
+-- porque necesita DOS archivos a la vez (audio Y video), cosa que un solo
+-- drive_file no puede representar.
+CREATE TABLE IF NOT EXISTS content_items (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id              INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  linked_type          TEXT,
+  linked_id            INTEGER,
+  title                TEXT,
+  status               TEXT NOT NULL DEFAULT 'por_grabar',
+  scheduled_date       TEXT NOT NULL,
+  audio_path           TEXT,
+  audio_original_name  TEXT,
+  audio_mime           TEXT,
+  audio_size           INTEGER,
+  video_path           TEXT,
+  video_original_name  TEXT,
+  video_mime           TEXT,
+  video_size           INTEGER,
+  notes                TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_content_items_date ON content_items(user_id, scheduled_date);
+
 -- Fila única: último latido del worker de fondo. Si esto deja de actualizarse,
 -- el worker está muerto aunque la web siga respondiendo con normalidad.
 CREATE TABLE IF NOT EXISTS worker_heartbeat (

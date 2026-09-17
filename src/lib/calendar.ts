@@ -2,20 +2,39 @@ import { db } from "./db";
 
 export type CalendarItem = {
   date: string; // YYYY-MM-DD
-  source: "drive" | "script";
+  source: "content" | "drive" | "script";
   id: number;
   title: string;
-  status: string; // estado real (Drive) o "subido" (script ya publicado con métricas)
-  kind: string | null; // 'audio'|'video' (Drive) o formato del guion ('reel'|'youtube')
+  status: string; // estado real (content/drive) o "subido" (script ya publicado con métricas)
+  kind: string | null; // 'audio'|'video' (drive) o formato del guion (script); null para content
+  hasAudio: boolean;
+  hasVideo: boolean;
 };
 
 // Todo lo que hay programado/publicado en un rango [from, to) de fechas
-// (strings YYYY-MM-DD, comparables lexicográficamente). Junta dos fuentes que
-// hoy viven en sitios distintos de la app:
-//   1) Archivos del Drive con scheduled_date (lo que TÚ programas a mano).
-//   2) Guiones normales ya publicados de verdad (script_metrics.published_at,
-//      que ya se rellena en la pestaña Guiones al meter resultados reales).
+// (strings YYYY-MM-DD, comparables lexicográficamente). Tres fuentes que
+// viven en sitios distintos de la app, unificadas aquí:
+//   1) content_items: publicaciones creadas desde el "+" del calendario
+//      (guion + audio + video clonado + fecha + estado, todo junto).
+//   2) drive_files con scheduled_date: archivos sueltos programados a mano
+//      desde el propio Drive.
+//   3) Guiones normales ya publicados de verdad (script_metrics.published_at).
 export function listCalendarItems(userId: number, from: string, to: string): CalendarItem[] {
+  const contentRows = db
+    .prepare(
+      `SELECT ci.scheduled_date as date, ci.id, ci.status, ci.audio_path, ci.video_path,
+              COALESCE(
+                ci.title,
+                CASE ci.linked_type
+                  WHEN 'script' THEN (SELECT title FROM scripts WHERE id = ci.linked_id)
+                  WHEN 'competitor_script' THEN (SELECT title FROM competitor_scripts WHERE id = ci.linked_id)
+                END
+              ) as title
+       FROM content_items ci
+       WHERE ci.user_id = ? AND ci.scheduled_date >= ? AND ci.scheduled_date < ?`
+    )
+    .all(userId, from, to) as { date: string; id: number; status: string; audio_path: string | null; video_path: string | null; title: string | null }[];
+
   const driveRows = db
     .prepare(
       `SELECT df.scheduled_date as date, df.id, df.status, df.kind,
@@ -40,7 +59,26 @@ export function listCalendarItems(userId: number, from: string, to: string): Cal
     .all(userId, from, to) as { date: string; id: number; title: string | null; format: string }[];
 
   const items: CalendarItem[] = [
-    ...driveRows.map((r) => ({ date: r.date, source: "drive" as const, id: r.id, title: r.title, status: r.status, kind: r.kind })),
+    ...contentRows.map((r) => ({
+      date: r.date,
+      source: "content" as const,
+      id: r.id,
+      title: r.title ?? "(sin título)",
+      status: r.status,
+      kind: null,
+      hasAudio: !!r.audio_path,
+      hasVideo: !!r.video_path,
+    })),
+    ...driveRows.map((r) => ({
+      date: r.date,
+      source: "drive" as const,
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      kind: r.kind,
+      hasAudio: false,
+      hasVideo: false,
+    })),
     ...scriptRows.map((r) => ({
       date: r.date,
       source: "script" as const,
@@ -48,6 +86,8 @@ export function listCalendarItems(userId: number, from: string, to: string): Cal
       title: r.title ?? "(sin título)",
       status: "subido",
       kind: r.format,
+      hasAudio: false,
+      hasVideo: false,
     })),
   ];
   return items.sort((a, b) => a.date.localeCompare(b.date));

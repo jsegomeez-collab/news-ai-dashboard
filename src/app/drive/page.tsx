@@ -1,93 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
-import type { DriveFolder, DriveFile, LinkTarget } from "@/lib/drive";
-import { DRIVE_STATUSES, DRIVE_STATUS_LABEL, DRIVE_STATUS_COLOR, driveKindIcon, fmtBytes } from "@/lib/driveUi";
-
-function LinkPicker({ file, onChange }: { file: DriveFile; onChange: () => void }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<LinkTarget[]>([]);
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open || query.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      const res = await fetch(`/api/drive/search?q=${encodeURIComponent(query)}`);
-      const json = (await res.json()) as { results?: LinkTarget[] };
-      setResults(json.results ?? []);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [query, open]);
-
-  async function link(target: LinkTarget) {
-    await fetch(`/api/drive/files/${file.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ linkedType: target.type, linkedId: target.id }),
-    });
-    setOpen(false);
-    setQuery("");
-    onChange();
-  }
-
-  async function unlink() {
-    await fetch(`/api/drive/files/${file.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ linkedType: null }),
-    });
-    onChange();
-  }
-
-  if (file.linked_type && !open) {
-    return (
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded bg-brand2/15 px-2 py-0.5 text-brand2">
-          {file.linked_type === "script" ? "📰" : "🕵️"} {file.linked_title ?? `#${file.linked_id}`}
-        </span>
-        <button onClick={() => setOpen(true)} className="text-zinc-500 hover:underline">cambiar</button>
-        <button onClick={unlink} className="text-red-400 hover:underline">quitar</button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative">
-      <input
-        value={query}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        placeholder="Buscar un guion para vincular…"
-        className="w-full rounded border border-edge bg-ink px-2 py-1.5 text-xs text-zinc-200 outline-none focus:border-brand"
-      />
-      {open && (
-        <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded border border-edge bg-panel shadow-lg">
-          {results.length === 0 ? (
-            <p className="px-2 py-2 text-xs text-zinc-600">
-              {query.trim().length < 2 ? "Escribe al menos 2 letras…" : "Sin resultados"}
-            </p>
-          ) : (
-            results.map((r) => (
-              <button
-                key={`${r.type}-${r.id}`}
-                onClick={() => link(r)}
-                className="block w-full truncate px-2 py-1.5 text-left text-xs text-zinc-300 hover:bg-panel2"
-              >
-                {r.type === "script" ? "📰" : "🕵️"} {r.title}
-              </button>
-            ))
-          )}
-          <button onClick={() => setOpen(false)} className="block w-full border-t border-edge/50 px-2 py-1 text-center text-[11px] text-zinc-600 hover:text-zinc-400">
-            cerrar
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
+import type { DriveFolder, DriveFile } from "@/lib/drive";
+import { DRIVE_STATUSES, DRIVE_STATUS_LABEL, driveKindIcon, fmtBytes } from "@/lib/driveUi";
+import { StatusPill } from "@/components/StatusPill";
+import { LinkPicker, type LinkTargetLite } from "@/components/LinkPicker";
 
 function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) {
   const [expanded, setExpanded] = useState(false);
@@ -114,6 +31,24 @@ function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) 
     onChange();
   }
 
+  async function link(target: LinkTargetLite) {
+    await fetch(`/api/drive/files/${file.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkedType: target.type, linkedId: target.id }),
+    });
+    onChange();
+  }
+
+  async function unlink() {
+    await fetch(`/api/drive/files/${file.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkedType: null }),
+    });
+    onChange();
+  }
+
   async function remove() {
     if (!window.confirm(`¿Eliminar "${file.original_name}"? No se puede deshacer.`)) return;
     await fetch(`/api/drive/files/${file.id}`, { method: "DELETE" });
@@ -123,9 +58,9 @@ function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) 
   const url = `/api/drive/files/${file.id}/content`;
 
   return (
-    <div className="rounded-lg border border-edge bg-panel p-3">
-      <button onClick={() => setExpanded((e) => !e)} className="flex w-full items-center gap-3 text-left">
-        <span className="text-xl">{driveKindIcon(file.kind)}</span>
+    <div className={`rounded-xl border bg-panel transition ${expanded ? "border-brand/40" : "border-edge hover:border-edge"}`}>
+      <button onClick={() => setExpanded((e) => !e)} className="flex w-full items-center gap-3 p-3.5 text-left">
+        <span className="text-2xl">{driveKindIcon(file.kind)}</span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">{file.original_name}</p>
           <p className="text-xs text-zinc-500">
@@ -133,20 +68,20 @@ function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) 
             {file.linked_title ? ` · vinculado a "${file.linked_title}"` : ""}
           </p>
         </div>
-        {file.scheduled_date && <span className="shrink-0 text-xs text-zinc-500">📅 {file.scheduled_date}</span>}
-        <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-semibold ${DRIVE_STATUS_COLOR[file.status] ?? DRIVE_STATUS_COLOR.por_grabar}`}>
-          {DRIVE_STATUS_LABEL[file.status] ?? file.status}
-        </span>
+        {file.scheduled_date && <span className="hidden shrink-0 text-xs text-zinc-500 sm:inline">📅 {file.scheduled_date}</span>}
+        <StatusPill status={file.status} size="sm" />
         <span className="shrink-0 text-xs text-zinc-500">{expanded ? "▲" : "▼"}</span>
       </button>
 
       {expanded && (
-        <div className="mt-3 space-y-3 border-t border-edge/50 pt-3">
-          {file.kind === "video" ? (
-            <video src={url} controls className="max-h-72 w-full rounded" />
-          ) : (
-            <audio src={url} controls className="w-full" />
-          )}
+        <div className="space-y-4 border-t border-edge/60 p-4">
+          <div className="overflow-hidden rounded-lg bg-ink">
+            {file.kind === "video" ? (
+              <video src={url} controls className="max-h-72 w-full" />
+            ) : (
+              <audio src={url} controls className="w-full p-3" />
+            )}
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs text-zinc-500">
@@ -154,7 +89,7 @@ function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) 
               <select
                 value={status}
                 onChange={(e) => changeStatus(e.target.value)}
-                className="mt-1 w-full rounded border border-edge bg-ink px-2 py-1.5 text-sm text-zinc-200"
+                className="mt-1 w-full rounded-lg border border-edge bg-ink px-2 py-1.5 text-sm text-zinc-200"
               >
                 {DRIVE_STATUSES.map((s) => (
                   <option key={s} value={s}>{DRIVE_STATUS_LABEL[s]}</option>
@@ -167,17 +102,21 @@ function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) 
                 type="date"
                 value={date}
                 onChange={(e) => changeDate(e.target.value)}
-                className="mt-1 w-full rounded border border-edge bg-ink px-2 py-1.5 text-sm text-zinc-200"
+                className="mt-1 w-full rounded-lg border border-edge bg-ink px-2 py-1.5 text-sm text-zinc-200"
               />
             </label>
           </div>
 
           <div>
             <p className="mb-1 text-xs text-zinc-500">Vinculado a un guion</p>
-            <LinkPicker file={file} onChange={onChange} />
+            <LinkPicker
+              current={{ type: file.linked_type, title: file.linked_title }}
+              onLink={link}
+              onUnlink={unlink}
+            />
           </div>
 
-          <div className="flex items-center justify-between border-t border-edge/40 pt-2">
+          <div className="flex items-center justify-between border-t border-edge/40 pt-3">
             <a href={url} download={file.original_name} className="text-xs text-brand hover:underline">
               ⬇ descargar
             </a>
@@ -259,7 +198,7 @@ export default function DrivePage() {
 
   return (
     <div>
-      <div className="mb-4">
+      <div className="mb-5">
         <h2 className="text-lg font-semibold text-white">🗄️ Drive</h2>
         <p className="mt-1 text-sm text-zinc-500">
           Tus audios y videos grabados, organizados por carpetas y vinculados a cada guion.
@@ -269,7 +208,7 @@ export default function DrivePage() {
       <div className="mb-4 flex flex-wrap items-center gap-1 text-sm">
         <button
           onClick={() => setFolderId(null)}
-          className={`rounded px-2 py-1 ${folderId === null ? "font-medium text-white" : "text-zinc-400 hover:text-zinc-200"}`}
+          className={`rounded-lg px-2.5 py-1 transition ${folderId === null ? "bg-panel2 font-medium text-white" : "text-zinc-400 hover:text-zinc-200"}`}
         >
           🗄️ Mi Drive
         </button>
@@ -278,7 +217,7 @@ export default function DrivePage() {
             <span className="text-zinc-600">/</span>
             <button
               onClick={() => setFolderId(f.id)}
-              className={`rounded px-2 py-1 ${f.id === folderId ? "font-medium text-white" : "text-zinc-400 hover:text-zinc-200"}`}
+              className={`rounded-lg px-2.5 py-1 transition ${f.id === folderId ? "bg-panel2 font-medium text-white" : "text-zinc-400 hover:text-zinc-200"}`}
             >
               {f.name}
             </button>
@@ -289,11 +228,11 @@ export default function DrivePage() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
           onClick={() => setShowNewFolder((v) => !v)}
-          className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200 hover:border-brand"
+          className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200 hover:border-brand"
         >
           📁+ Nueva carpeta
         </button>
-        <label className="cursor-pointer rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
+        <label className="cursor-pointer rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
           {uploading ? "Subiendo…" : "⬆️ Subir audio/video"}
           <input
             ref={inputRef}
@@ -315,9 +254,9 @@ export default function DrivePage() {
             placeholder="Nombre de la carpeta"
             onKeyDown={(e) => e.key === "Enter" && createFolder()}
             autoFocus
-            className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-brand"
+            className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-brand"
           />
-          <button onClick={createFolder} className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white">
+          <button onClick={createFolder} className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white">
             Crear
           </button>
           <button onClick={() => setShowNewFolder(false)} className="text-sm text-zinc-500 hover:text-zinc-300">
@@ -329,12 +268,12 @@ export default function DrivePage() {
       {folders.length > 0 && (
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {folders.map((f) => (
-            <div key={f.id} className="group relative rounded-lg border border-edge bg-panel p-3">
-              <button onClick={() => setFolderId(f.id)} className="flex w-full flex-col items-center gap-1 text-center">
+            <div key={f.id} className="group relative rounded-xl border border-edge bg-panel p-3 transition hover:border-brand/40">
+              <button onClick={() => setFolderId(f.id)} className="flex w-full flex-col items-center gap-1.5 text-center">
                 <span className="text-3xl">📁</span>
                 <span className="w-full truncate text-sm text-zinc-200">{f.name}</span>
               </button>
-              <div className="mt-1 hidden justify-center gap-2 text-xs group-hover:flex">
+              <div className="mt-1.5 hidden justify-center gap-2 text-xs group-hover:flex">
                 <button onClick={() => renameFolderPrompt(f)} className="text-zinc-500 hover:text-zinc-300">renombrar</button>
                 <button onClick={() => deleteFolderConfirm(f)} className="text-red-400 hover:underline">eliminar</button>
               </div>
@@ -344,13 +283,13 @@ export default function DrivePage() {
       )}
 
       {files.length === 0 && folders.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-edge p-10 text-center text-zinc-500">
+        <div className="rounded-xl border border-dashed border-edge p-10 text-center text-zinc-500">
           <p className="mb-2 text-2xl">🗄️</p>
           <p className="text-sm">Esta carpeta está vacía.</p>
           <p className="mt-1 text-xs text-zinc-600">Sube un audio o video, o crea una subcarpeta.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           {files.map((f) => (
             <FileRow key={f.id} file={f} onChange={refresh} />
           ))}
