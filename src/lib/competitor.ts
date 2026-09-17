@@ -301,6 +301,23 @@ export function setVideoStatus(videoId: number, status: string, errorMsg?: strin
   db.prepare(`UPDATE competitor_videos SET status = ?, error_msg = ? WHERE id = ?`).run(status, errorMsg ?? null, videoId);
 }
 
+// Borra videos (scrapeados o ya analizados) elegidos a mano por el usuario.
+// Acotado a las cuentas del propio userId, así que no puede tocar videos de
+// otro usuario aunque intente colar un id ajeno. FK ON DELETE CASCADE se
+// encarga de transcript/análisis/guiones adaptados asociados.
+export function deleteVideos(userId: number, ids: number[]): number {
+  if (ids.length === 0) return 0;
+  const placeholders = ids.map(() => "?").join(",");
+  const res = db
+    .prepare(
+      `DELETE FROM competitor_videos
+       WHERE id IN (${placeholders})
+         AND account_id IN (SELECT id FROM competitor_accounts WHERE user_id = ?)`
+    )
+    .run(...ids, userId);
+  return Number(res.changes);
+}
+
 export function saveTranscript(videoId: number, text: string, language: string, model: string): void {
   db.prepare(
     `INSERT INTO competitor_transcripts(video_id, text, language, model, created_at)

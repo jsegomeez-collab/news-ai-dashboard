@@ -232,8 +232,12 @@ function AccountCard({ account, onChanged }: { account: CompetitorAccount; onCha
 
 // ─── VideoCard ────────────────────────────────────────────────────────────────
 
-function VideoCard({ video, onAnalyze, onTranscribe, transcribing }: {
+function VideoCard({ video, selected, onToggleSelect, onDelete, deleting, onAnalyze, onTranscribe, transcribing }: {
   video: CompetitorVideo;
+  selected: boolean;
+  onToggleSelect: (id: number) => void;
+  onDelete: (id: number) => void;
+  deleting: number | null;
   onAnalyze: (id: number) => void;
   onTranscribe: (id: number) => void;
   transcribing: number | null;
@@ -241,8 +245,15 @@ function VideoCard({ video, onAnalyze, onTranscribe, transcribing }: {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <article className="rounded-lg border border-edge bg-panel p-4">
+    <article className={`rounded-lg border p-4 ${selected ? "border-brand bg-brand/5" : "border-edge bg-panel"}`}>
       <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(video.id)}
+          className="mt-1.5 h-4 w-4 shrink-0 accent-brand"
+          aria-label="Seleccionar video"
+        />
         {video.thumbnail_url && (
           <img src={video.thumbnail_url} alt="" className="h-16 w-12 shrink-0 rounded object-cover" />
         )}
@@ -318,6 +329,13 @@ function VideoCard({ video, onAnalyze, onTranscribe, transcribing }: {
                 {transcribing === video.id ? "Transcribiendo…" : "🎙 Transcribir ahora"}
               </button>
             )}
+            <button
+              onClick={() => onDelete(video.id)}
+              disabled={deleting === video.id}
+              className="ml-auto rounded border border-red-900/60 px-2.5 py-1 text-xs text-red-400 hover:bg-red-950/40 disabled:opacity-50"
+            >
+              {deleting === video.id ? "Eliminando…" : "🗑 Eliminar"}
+            </button>
           </div>
 
           {expanded && video.transcript && (
@@ -433,10 +451,23 @@ type Tab = "cuentas" | "videos" | "guiones";
 
 const VIDEOS_PAGE_SIZE = 20;
 
+const VIDEO_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "Todos los estados" },
+  { value: "done", label: "✓ Analizados" },
+  { value: "pending", label: "Pendientes" },
+  { value: "transcribing", label: "Transcribiendo…" },
+  { value: "analysing", label: "Analizando…" },
+  { value: "error", label: "Error" },
+];
+
 export default function CompetenciaPage() {
   const [tab, setTab] = useState<Tab>("cuentas");
   const [accountFilter, setAccountFilter] = useState<number | undefined>(undefined);
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [videoPage, setVideoPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [analyzeMsg, setAnalyzeMsg] = useState("");
   const [transcribing, setTranscribing] = useState<number | null>(null);
@@ -454,7 +485,8 @@ export default function CompetenciaPage() {
     counts: Record<string, number>;
   }>(
     `/api/competitors/videos?page=${videoPage}&pageSize=${VIDEOS_PAGE_SIZE}` +
-      (accountFilter ? `&accountId=${accountFilter}` : ""),
+      (accountFilter ? `&accountId=${accountFilter}` : "") +
+      (statusFilter ? `&status=${statusFilter}` : ""),
     15000
   );
 
@@ -467,7 +499,74 @@ export default function CompetenciaPage() {
   function changeAccountFilter(id: number | undefined) {
     setAccountFilter(id);
     setVideoPage(1);
+    setSelectedIds(new Set());
   }
+  function changeStatusFilter(v: string) {
+    setStatusFilter(v || undefined);
+    setVideoPage(1);
+    setSelectedIds(new Set());
+  }
+  function changeVideoPage(p: number) {
+    setVideoPage(p);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectPage() {
+    setSelectedIds((prev) => {
+      const allSelected = videos.length > 0 && videos.every((v) => prev.has(v.id));
+      if (allSelected) return new Set();
+      return new Set(videos.map((v) => v.id));
+    });
+  }
+
+  async function deleteVideoIds(ids: number[]): Promise<number> {
+    const res = await fetch("/api/competitors/videos", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    const json = (await res.json()) as { ok?: boolean; deleted?: number; error?: string };
+    if (!json.ok) throw new Error(json.error ?? "Error al eliminar");
+    return json.deleted ?? 0;
+  }
+
+  const handleDeleteOne = useCallback(async (id: number) => {
+    if (!window.confirm("¿Eliminar este video? Se borrará también su transcripción, análisis y guiones adaptados. No se puede deshacer.")) return;
+    setDeletingId(id); setAnalyzeMsg("");
+    try {
+      await deleteVideoIds([id]);
+      setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+      refreshVideos();
+    } catch (e) {
+      setAnalyzeMsg((e as Error).message);
+    } finally {
+      setDeletingId(null);
+    }
+  }, [refreshVideos]);
+
+  const handleDeleteSelected = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(`¿Eliminar ${ids.length} video(s) seleccionados? Se borrará también su transcripción, análisis y guiones adaptados. No se puede deshacer.`)) return;
+    setBulkDeleting(true); setAnalyzeMsg("");
+    try {
+      const deleted = await deleteVideoIds(ids);
+      setAnalyzeMsg(`✓ ${deleted} video(s) eliminados`);
+      setSelectedIds(new Set());
+      refreshVideos();
+    } catch (e) {
+      setAnalyzeMsg((e as Error).message);
+    } finally {
+      setBulkDeleting(false);
+    }
+  }, [selectedIds, refreshVideos]);
 
   const handlePoll = useCallback(async () => {
     setPolling(true); setPollMsg("");
@@ -634,6 +733,13 @@ export default function CompetenciaPage() {
                 <option key={a.id} value={a.id}>{PLATFORM_ICON[a.platform]} @{a.handle}</option>
               ))}
             </select>
+
+            <select value={statusFilter ?? ""} onChange={(e) => changeStatusFilter(e.target.value)}
+              className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200">
+              {VIDEO_STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
           </div>
           <div className="flex items-center gap-3 text-xs text-zinc-500">
             <span>{videosTotal} videos · {doneCount} analizados · {pendingCount} pendientes</span>
@@ -642,10 +748,42 @@ export default function CompetenciaPage() {
             )}
           </div>
 
+          {/* selección y borrado */}
+          {videos.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded border border-edge bg-panel px-3 py-2 text-xs">
+              <label className="flex items-center gap-2 text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={videos.length > 0 && videos.every((v) => selectedIds.has(v.id))}
+                  onChange={toggleSelectPage}
+                  className="h-4 w-4 accent-brand"
+                />
+                Seleccionar página ({videos.length})
+              </label>
+              {selectedIds.size > 0 && (
+                <>
+                  <span className="text-zinc-500">{selectedIds.size} seleccionado(s)</span>
+                  <button
+                    onClick={handleDeleteSelected}
+                    disabled={bulkDeleting}
+                    className="ml-auto rounded bg-red-800 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {bulkDeleting ? "Eliminando…" : `🗑 Eliminar seleccionados (${selectedIds.size})`}
+                  </button>
+                  <button onClick={() => setSelectedIds(new Set())} className="text-zinc-500 hover:text-zinc-300">
+                    cancelar
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           {videos.length === 0 ? (
             <div className="rounded-lg border border-dashed border-edge p-8 text-center text-zinc-500">
               <p className="text-2xl mb-2">📹</p>
-              <p className="text-sm">No hay videos todavía.</p>
+              <p className="text-sm">
+                {statusFilter || accountFilter ? "No hay videos con este filtro." : "No hay videos todavía."}
+              </p>
               <p className="mt-1 text-xs text-zinc-600">
                 Los videos aparecerán aquí una vez que el worker descubra contenido viral de tus cuentas espiadas.
               </p>
@@ -654,6 +792,10 @@ export default function CompetenciaPage() {
             <div className="space-y-3">
               {videos.map((v) => (
                 <VideoCard key={v.id} video={v}
+                  selected={selectedIds.has(v.id)}
+                  onToggleSelect={toggleSelect}
+                  onDelete={handleDeleteOne}
+                  deleting={deletingId}
                   onAnalyze={(id) => { setTab("guiones"); handleAnalyze(id); }}
                   onTranscribe={handleTranscribe}
                   transcribing={transcribing} />
@@ -664,7 +806,7 @@ export default function CompetenciaPage() {
           {videosPages > 1 && (
             <div className="mt-2 flex items-center justify-center gap-3">
               <button
-                onClick={() => setVideoPage((p) => Math.max(1, p - 1))}
+                onClick={() => changeVideoPage(Math.max(1, videoPage - 1))}
                 disabled={videoPage <= 1}
                 className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
               >
@@ -674,7 +816,7 @@ export default function CompetenciaPage() {
                 Página {videoPage} de {videosPages}
               </span>
               <button
-                onClick={() => setVideoPage((p) => Math.min(videosPages, p + 1))}
+                onClick={() => changeVideoPage(Math.min(videosPages, videoPage + 1))}
                 disabled={videoPage >= videosPages}
                 className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
               >
