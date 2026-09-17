@@ -24,6 +24,10 @@ export type UserSettings = {
   heygenVoiceId: string;
   heygenVoiceLabel: string;
   heygenDailyUsdCap: number;
+  // Ventana horaria (UTC) para auto-programar vídeos ya generados en el
+  // calendario — ver autoSchedule.ts.
+  postingWindowStartHour: number;
+  postingWindowEndHour: number;
 };
 
 // Versión de UserSettings segura para mandar al navegador: las claves reales
@@ -70,6 +74,8 @@ type Row = {
   heygen_voice_id: string;
   heygen_voice_label: string;
   heygen_daily_usd_cap: number;
+  posting_window_start_hour: number;
+  posting_window_end_hour: number;
 };
 
 function ensure(userId: number): void {
@@ -104,6 +110,8 @@ export function readUserSettings(userId: number): UserSettings {
     heygenVoiceId: r.heygen_voice_id ?? "",
     heygenVoiceLabel: r.heygen_voice_label ?? "",
     heygenDailyUsdCap: r.heygen_daily_usd_cap,
+    postingWindowStartHour: r.posting_window_start_hour,
+    postingWindowEndHour: r.posting_window_end_hour,
   };
 }
 
@@ -129,6 +137,8 @@ export function writeUserSettings(userId: number, p: Partial<UserSettings>): Use
     ["heygenVoiceId", "heygen_voice_id", (v) => String(v ?? "").trim()],
     ["heygenVoiceLabel", "heygen_voice_label", (v) => String(v ?? "").trim()],
     ["heygenDailyUsdCap", "heygen_daily_usd_cap", (v) => Math.max(0, Number(v) || 0)],
+    ["postingWindowStartHour", "posting_window_start_hour", (v) => clampInt(v, 0, 23)],
+    ["postingWindowEndHour", "posting_window_end_hour", (v) => clampInt(v, 1, 24)],
   ];
   for (const [key, col, fn] of map) {
     if (p[key] !== undefined) {

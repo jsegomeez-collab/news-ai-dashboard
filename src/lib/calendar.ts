@@ -9,6 +9,10 @@ export type CalendarItem = {
   kind: string | null; // 'audio'|'video' (drive) o formato del guion (script); null para content
   hasAudio: boolean;
   hasVideo: boolean;
+  // HH:mm (UTC) solo para content_items auto-programados por el pipeline de
+  // HeyGen (ver autoSchedule.ts) — null en todo lo demás (creado a mano, o
+  // fuentes que no tienen hora, como drive/script).
+  time: string | null;
 };
 
 // Todo lo que hay programado/publicado en un rango [from, to) de fechas
@@ -22,7 +26,7 @@ export type CalendarItem = {
 export function listCalendarItems(userId: number, from: string, to: string): CalendarItem[] {
   const contentRows = db
     .prepare(
-      `SELECT ci.scheduled_date as date, ci.id, ci.status, ci.audio_path, ci.video_path,
+      `SELECT ci.scheduled_date as date, ci.scheduled_time as time, ci.id, ci.status, ci.audio_path, ci.video_path,
               COALESCE(
                 ci.title,
                 CASE ci.linked_type
@@ -33,7 +37,7 @@ export function listCalendarItems(userId: number, from: string, to: string): Cal
        FROM content_items ci
        WHERE ci.user_id = ? AND ci.scheduled_date >= ? AND ci.scheduled_date < ?`
     )
-    .all(userId, from, to) as { date: string; id: number; status: string; audio_path: string | null; video_path: string | null; title: string | null }[];
+    .all(userId, from, to) as { date: string; time: string | null; id: number; status: string; audio_path: string | null; video_path: string | null; title: string | null }[];
 
   const driveRows = db
     .prepare(
@@ -68,6 +72,7 @@ export function listCalendarItems(userId: number, from: string, to: string): Cal
       kind: null,
       hasAudio: !!r.audio_path,
       hasVideo: !!r.video_path,
+      time: r.time,
     })),
     ...driveRows.map((r) => ({
       date: r.date,
@@ -78,6 +83,7 @@ export function listCalendarItems(userId: number, from: string, to: string): Cal
       kind: r.kind,
       hasAudio: false,
       hasVideo: false,
+      time: null,
     })),
     ...scriptRows.map((r) => ({
       date: r.date,
@@ -88,6 +94,7 @@ export function listCalendarItems(userId: number, from: string, to: string): Cal
       kind: r.format,
       hasAudio: false,
       hasVideo: false,
+      time: null,
     })),
   ];
   return items.sort((a, b) => a.date.localeCompare(b.date));

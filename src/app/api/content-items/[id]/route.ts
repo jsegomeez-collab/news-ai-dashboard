@@ -26,6 +26,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await readJsonBody<{
     status?: string;
     scheduledDate?: string;
+    scheduledTime?: string | null;
     linkedType?: "script" | "competitor_script" | null;
     linkedId?: number | null;
     title?: string | null;
@@ -44,6 +45,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   updateContentItem(user.id, itemId, {
     status: body.status,
     scheduledDate: body.scheduledDate,
+    scheduledTime: body.scheduledTime,
     linkedType: body.linkedType,
     linkedId: body.linkedType === null ? null : body.linkedId,
     title: body.title,

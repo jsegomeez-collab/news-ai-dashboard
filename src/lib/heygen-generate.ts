@@ -9,6 +9,7 @@ import { transcribeWithWordTimestamps } from "./captions";
 import { createTikTokStyleCaptions } from "@remotion/captions";
 import { renderCaptionedVideo } from "./remotion-render";
 import { generateVideoTitle } from "./videoTitle";
+import { scheduleGeneratedVideo } from "./contentItems";
 
 export type SourceType = "script" | "competitor_script";
 
@@ -269,6 +270,7 @@ export async function processCaptioning(
 
       deleteUploadIfExists(r.video_path); // el crudo de HeyGen ya no hace falta, solo ocupaba disco
       markCaptioningDone(r.source_type, r.source_id, outPath);
+      scheduleGeneratedVideo(r.user_id, r.source_type, r.source_id, titleInfo?.title ?? source?.title ?? null, outPath);
       completed++;
     } catch (e) {
       console.warn(`[heygen] subtítulos render ${r.id} (${r.source_type} ${r.source_id}):`, (e as Error).message);

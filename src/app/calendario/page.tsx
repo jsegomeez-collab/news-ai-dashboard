@@ -17,6 +17,7 @@ type CalendarItem = {
   kind: string | null;
   hasAudio: boolean;
   hasVideo: boolean;
+  time: string | null; // HH:mm (UTC), solo en publicaciones auto-programadas por HeyGen
 };
 
 type ContentItemFull = {
@@ -26,6 +27,7 @@ type ContentItemFull = {
   title: string | null;
   status: string;
   scheduled_date: string;
+  scheduled_time: string | null;
   audio_path: string | null;
   audio_original_name: string | null;
   audio_mime: string | null;
@@ -137,6 +139,7 @@ function ContentItemCard({ id, onChange }: { id: number; onChange: () => void })
   const item = data?.item;
   const [status, setStatus] = useState<string | null>(null);
   const [date, setDate] = useState<string | null>(null);
+  const [time, setTime] = useState<string | null>(null);
 
   async function patch(body: Record<string, unknown>) {
     await fetch(`/api/content-items/${id}`, {
@@ -157,6 +160,7 @@ function ContentItemCard({ id, onChange }: { id: number; onChange: () => void })
   if (!item) return null;
   const curStatus = status ?? item.status;
   const curDate = date ?? item.scheduled_date;
+  const curTime = time ?? item.scheduled_time ?? "";
 
   return (
     <div className={`rounded-xl border bg-panel transition ${expanded ? "border-brand/40" : "border-edge"}`}>
@@ -174,7 +178,7 @@ function ContentItemCard({ id, onChange }: { id: number; onChange: () => void })
 
       {expanded && (
         <div className="space-y-3 border-t border-edge/60 p-3">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <label className="text-xs text-zinc-500">
               Estado
               <select
@@ -192,7 +196,22 @@ function ContentItemCard({ id, onChange }: { id: number; onChange: () => void })
               <input
                 type="date"
                 value={curDate}
-                onChange={(e) => { setDate(e.target.value); patch({ scheduledDate: e.target.value }); }}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  // Manda también la hora actual en el mismo patch — si no,
+                  // cambiar solo la fecha borraría una hora auto-programada
+                  // que seguía siendo válida.
+                  patch({ scheduledDate: e.target.value, scheduledTime: curTime || null });
+                }}
+                className="mt-1 w-full rounded-lg border border-edge bg-ink px-2 py-1.5 text-sm text-zinc-200"
+              />
+            </label>
+            <label className="text-xs text-zinc-500">
+              Hora (UTC)
+              <input
+                type="time"
+                value={curTime}
+                onChange={(e) => { setTime(e.target.value); patch({ scheduledTime: e.target.value || null }); }}
                 className="mt-1 w-full rounded-lg border border-edge bg-ink px-2 py-1.5 text-sm text-zinc-200"
               />
             </label>
@@ -395,6 +414,9 @@ export default function CalendarioPage() {
   const itemsByDate = useMemo(() => {
     const map: Record<string, CalendarItem[]> = {};
     for (const it of items) (map[it.date] ??= []).push(it);
+    // Dentro de un mismo día, las auto-programadas (con hora) van en orden
+    // cronológico primero — así se ve de un vistazo el espaciado 1-3h real.
+    for (const list of Object.values(map)) list.sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
     return map;
   }, [items]);
 
@@ -540,6 +562,7 @@ export default function CalendarioPage() {
                           : "bg-zinc-700/60 text-zinc-300"
                         }`}
                       >
+                        {it.time ? `${it.time} · ` : ""}
                         {it.title}
                       </div>
                     ))}

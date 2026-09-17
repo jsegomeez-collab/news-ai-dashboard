@@ -515,11 +515,27 @@ CREATE TABLE IF NOT EXISTS heygen_usage_log (
     ["heygen_voice_id", "TEXT NOT NULL DEFAULT ''"],
     ["heygen_voice_label", "TEXT NOT NULL DEFAULT ''"],
     ["heygen_daily_usd_cap", "REAL NOT NULL DEFAULT 10"],
+    // Ventana horaria (UTC) dentro de la cual se auto-programan los vídeos ya
+    // generados — fuera de este rango, el siguiente hueco salta al inicio de
+    // la ventana en vez de caer, p.ej., a las 3 de la madrugada.
+    ["posting_window_start_hour", "INTEGER NOT NULL DEFAULT 8"],
+    ["posting_window_end_hour", "INTEGER NOT NULL DEFAULT 22"],
   ] as const) {
     if (!cols.some((c) => c.name === col)) {
       r.exec(`ALTER TABLE user_settings ADD COLUMN ${col} ${def}`);
       console.log(`[db] columna ${col} añadida a user_settings`);
     }
+  }
+
+  // Hora del hueco auto-programado (HH:mm, UTC) — separada de scheduled_date
+  // a propósito: el calendario manual sigue siendo por DÍA (nada cambia para
+  // las publicaciones creadas a mano desde el "+"), y solo los vídeos que
+  // salen solos del pipeline de HeyGen llevan una hora concreta, calculada
+  // por autoSchedule.ts para espaciarlos entre sí.
+  const ccols = r.prepare(`PRAGMA table_info(content_items)`).all() as { name: string }[];
+  if (!ccols.some((c) => c.name === "scheduled_time")) {
+    r.exec(`ALTER TABLE content_items ADD COLUMN scheduled_time TEXT`);
+    console.log("[db] columna scheduled_time añadida a content_items");
   }
 }
 

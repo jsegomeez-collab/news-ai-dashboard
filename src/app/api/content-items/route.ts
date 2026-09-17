@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
     linkedId?: number | null;
     title?: string | null;
     scheduledDate?: string;
+    scheduledTime?: string | null;
     status?: string;
   }>(req);
 
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
     linkedId: body.linkedId ?? null,
     title: body.title,
     scheduledDate: body.scheduledDate,
+    scheduledTime: body.scheduledTime,
     status: body.status,
   });
   return NextResponse.json({ ok: true, id });

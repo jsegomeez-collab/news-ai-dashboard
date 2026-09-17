@@ -22,6 +22,8 @@ type Settings = {
   heygenVoiceId: string;
   heygenVoiceLabel: string;
   heygenDailyUsdCap: number;
+  postingWindowStartHour: number;
+  postingWindowEndHour: number;
 };
 type ModelOption = { id: string; label: string };
 type Status = {
@@ -468,6 +470,34 @@ export default function AjustesPage() {
                 className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200" />
             </label>
           </div>
+        </div>
+      </Card>
+
+      <Card title="📅 Ventana de publicación (auto-programación)">
+        <p className="mb-3 text-xs text-zinc-500">
+          Cuando un vídeo con avatar termina, se programa solo en el Calendario, espaciado
+          1-3h del anterior. Esta ventana (hora UTC) evita que un hueco caiga de madrugada:
+          si se sale de rango, salta al inicio de la ventana del día correspondiente.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-sm text-zinc-300">
+            Desde (hora UTC)
+            <input
+              inputMode="numeric"
+              value={String(s.postingWindowStartHour)}
+              onChange={(e) => patch({ postingWindowStartHour: Math.min(23, num(e.target.value)) })}
+              className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200"
+            />
+          </label>
+          <label className="text-sm text-zinc-300">
+            Hasta (hora UTC)
+            <input
+              inputMode="numeric"
+              value={String(s.postingWindowEndHour)}
+              onChange={(e) => patch({ postingWindowEndHour: Math.min(24, num(e.target.value)) })}
+              className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200"
+            />
+          </label>
         </div>
       </Card>
 
