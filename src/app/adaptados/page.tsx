@@ -10,6 +10,7 @@ import { StatusPill } from "@/components/StatusPill";
 import { DRIVE_STATUSES } from "@/lib/driveUi";
 import type { ContentItem } from "@/lib/contentItems";
 import { SCRIPT_STATUSES, STATUS_LABEL } from "@/lib/status";
+import { HeygenRenderStatus } from "@/components/HeygenRenderStatus";
 
 const PAGE_SIZE = 20;
 
@@ -422,6 +423,7 @@ function ScriptDoc({
         <div className="mt-4 space-y-4 border-t border-edge/50 pt-4">
           <div className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200">{buildScriptText(s)}</div>
           {s.adaptation_notes && <p className="text-xs italic text-zinc-600">{s.adaptation_notes}</p>}
+          <HeygenRenderStatus type="competitor_script" id={s.id} />
           <MediaUpload
             scriptId={s.id}
             initial={{

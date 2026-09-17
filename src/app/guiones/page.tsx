@@ -9,6 +9,7 @@ import {
   type ScriptStatus,
 } from "@/lib/status";
 import { buildScriptText } from "@/lib/scriptText";
+import { HeygenRenderStatus } from "@/components/HeygenRenderStatus";
 
 function scoreColor(s: number | null): string {
   if (s === null) return "bg-zinc-700 text-zinc-300";
@@ -169,6 +170,7 @@ function ScriptCard({ s, onChange }: { s: ScriptItem; onChange: () => void }) {
               {s.improvements && <p className="mt-1 text-brand2">→ {s.improvements}</p>}
             </div>
           )}
+          <HeygenRenderStatus type="script" id={s.id} />
           <MetricsForm s={s} onSaved={onChange} />
           {s.article_url && (
             <a
