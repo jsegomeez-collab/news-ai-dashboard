@@ -44,11 +44,11 @@ const ADAPTED_SCHEMA = {
   type: "object",
   properties: {
     title:            { type: "string", description: "Título interno del guion (corto, para identificarlo)." },
-    hook:             { type: "string", description: "Los primeros ~10 segundos del video original, siempre en ESPAÑOL. Si el original es en español: copia LITERAL. Si es en inglés u otro idioma: traducción DIRECTA y FIEL (mismo ritmo, misma cadencia, misma fuerza emocional — solo cambia el idioma, nada más). Nunca adaptes ni parafrasees." },
-    puente:           { type: "string", description: "1-3 frases de transición que conectan el hook original (idéntico) con el vehículo único del creador. Debe sonar natural: el oyente pasa del hook viral a la propuesta de la marca sin notar el corte. Usa la voz y tonalidad del creador." },
-    body:             { type: "string", description: "Cuerpo del guion a partir del puente: 100% la marca del creador, su oferta, su audiencia, su tonalidad. Mantén la estructura rítmica del original (mismo número de beats, misma cadencia) pero con el contenido propio." },
-    cta:              { type: "string", description: "CTA alineado con la oferta del creador." },
-    adaptation_notes: { type: "string", description: "En 1 frase: en qué segundo/línea empieza el puente y qué cambias para conectar con su marca." },
+    hook:             { type: "string", description: "Los primeros ~10 segundos del video original, siempre en ESPAÑOL. Si el original es en español: copia LITERAL. Si es en inglés u otro idioma: traducción DIRECTA y FIEL (mismo ritmo, misma cadencia, misma fuerza emocional — solo cambia el idioma, nada más). PROHIBIDO adaptar, mejorar o parafrasear." },
+    puente:           { type: "string", description: "1-2 frases de transición hacia la oferta del creador — SOLO si el tema conecta de forma natural con negocios/marketing/ventas/automatización con IA. Si el video es puramente técnico o informativo (una herramienta, un repositorio, un paper) sin ángulo de negocio natural, déjalo vacío (''). Nunca fuerces una conexión artificial." },
+    body:             { type: "string", description: "El cuerpo del guion con el MÍNIMO cambio posible respecto al original: mismo contenido, mismo orden, mismo nivel de detalle — solo ajustado en idioma (si aplica) y en tono a la voz del creador. Si el tema conecta de forma natural con su oferta, puedes tejerlo con sutileza; si no, déjalo informativo tal cual, sin forzar venta. Puedes recortar partes redundantes o aburridas del original, nunca añadir contenido nuevo para alargarlo." },
+    cta:              { type: "string", description: "CTA alineado con la oferta del creador — SOLO si el contenido lo justifica. Si el video es puramente técnico/informativo sin ángulo de venta, usa un CTA nativo y suave (seguir, guardar) o déjalo vacío (''); un CTA de venta forzado en contenido que no pega es peor que no ponerlo." },
+    adaptation_notes: { type: "string", description: "En 1 frase: qué se cambió (idioma/tono/recortes) y si se aplicó bridge a la oferta o se dejó el contenido tal cual por no tener conexión natural con el negocio." },
   },
   required: ["title", "hook", "puente", "body", "cta", "adaptation_notes"],
   additionalProperties: false,
@@ -65,25 +65,65 @@ type AdaptedOut = {
 
 const ADAPTED_PERSONA =
   "Eres el Head of Content de una marca personal de IA aplicada a negocios digitales. " +
-  "Te han dado la transcripción de un reel viral de la competencia y el análisis de por qué funciona.\n\n" +
-  "REGLA ABSOLUTA — EL HOOK ES SAGRADO:\n" +
-  "Los primeros ~10 segundos del guion replican el original con precisión quirúrgica. " +
-  "El campo 'hook' debe ser una traducción/transcripción FIEL de las primeras líneas:\n" +
-  "  - Si el original está en ESPAÑOL: copia LITERAL, palabra por palabra. Cero cambios.\n" +
-  "  - Si el original está en INGLÉS u otro idioma: tradúcelo al español de forma DIRECTA y LITERAL, " +
-  "    conservando exactamente el mismo ritmo, cadencia, estructura de frase y fuerza emocional. " +
-  "    No adaptes, no mejores, no parafrasees — solo traduce preservando la fórmula. " +
-  "    Una traducción literal que suene igual de potente, no una versión creativa.\n" +
-  "Este hook es el patrón que lo viralizó. La única transformación permitida es de idioma, nunca de estructura ni contenido.\n\n" +
-  "Lo que SÍ adaptas: el 'puente' (transición hook→marca) y el 'body' (contenido de la marca). " +
-  "El resultado final debe sonar 100% a la marca del creador desde el puente en adelante, " +
-  "pero el hook respeta la fórmula original. " +
+  "Te han dado la transcripción de un reel viral de la competencia y el análisis de por qué funciona. " +
+  "Tu trabajo NO es reescribir el video para venderlo — es adaptarlo con el MÍNIMO cambio posible, " +
+  "manteniendo casi intacto el contenido, la duración y el ritmo del original.\n\n" +
+
+  "REGLA ABSOLUTA — PROHIBIDO MODIFICAR EL HOOK:\n" +
+  "El campo 'hook' es una copia/traducción FIEL de las primeras líneas del original, palabra por palabra:\n" +
+  "  - Si el original está en ESPAÑOL: copia LITERAL. Cero cambios, ni una palabra distinta.\n" +
+  "  - Si está en otro idioma: SOLO se traduce de forma mecánica y directa (nunca se mejora ni parafrasea), " +
+  "    conservando el mismo ritmo, cadencia y estructura de frase.\n" +
+  "Bajo ninguna circunstancia se reescribe, resume, mejora o adapta el hook. Está PROHIBIDO tocarlo más allá " +
+  "de la traducción literal cuando aplique.\n\n" +
+
+  "REGLA — VARIACIÓN MÍNIMA EN TODO EL GUION:\n" +
+  "El resto (puente + body + cta) también debe parecerse MUCHO al original — esto NO es una reescritura libre " +
+  "con el pretexto de 'adaptarlo a mi marca'. Cambia solo lo estrictamente necesario: idioma si aplica, y ajustes " +
+  "ligeros de tono para que suene a la voz del creador. No inventes contenido nuevo, no alargues, no rellenes. " +
+  "Si el original tiene una parte redundante, lenta o aburrida, puedes recortarla — pero nunca compenses un " +
+  "recorte añadiendo material nuevo para alargar el guion.\n\n" +
+
+  "REGLA — EL BRIDGE A LA OFERTA ES OPCIONAL, NUNCA FORZADO:\n" +
+  "Solo conectas el contenido con la oferta/marca del creador ('puente' y un 'cta' de venta) SI el tema tiene " +
+  "una relación natural con negocios digitales, marketing, ventas o automatización con IA. Si el video trata de " +
+  "algo puramente técnico sin ángulo de negocio — un repositorio de GitHub, una herramienta o modelo concreto, " +
+  "un paper, una feature de un producto — NO fuerces la venta: deja 'puente' vacío ('') y usa un 'cta' suave y " +
+  "nativo (o vacío) en vez de un pitch. Un guion informativo que se queda tal cual, sin vender nada, es el " +
+  "resultado correcto en ese caso — forzar un 'cómprame' donde no pega es peor que no ponerlo.\n\n" +
+
   "Devuelve SOLO JSON válido.";
 
 function formatBrief(format: "reel" | "youtube"): string {
   return format === "reel"
-    ? "FORMATO: REEL / VIDEO CORTO (30-90 seg). Gancho potente en los primeros 3 seg, idea central ágil, CTA claro. Body en texto hablado natural."
-    : "FORMATO: YOUTUBE / VIDEO LARGO (5-10 min). Estructura: gancho, contexto, desarrollo 2-4 puntos, ejemplo práctico, CTA. Body como guion hablado completo.";
+    ? "FORMATO: REEL / VIDEO CORTO. Gancho potente en los primeros segundos, UNA idea central, ritmo ágil de " +
+      "frases cortas. Body en texto hablado natural."
+    : "FORMATO: YOUTUBE. Puede ser algo más explicativo que un reel (gancho, contexto, desarrollo, cierre), " +
+      "pero SIN inflar de relleno solo por ser 'formato largo' — la duración real la marca el video original " +
+      "(ver más abajo), no el formato de destino.";
+}
+
+const WORDS_PER_SECOND = 2.6; // ritmo hablado natural en español para contenido dinámico de redes.
+
+// La duración del guion adaptado debe seguir la del video ORIGINAL, no un
+// rango genérico por formato — si el original dura 43s, el adaptado no puede
+// acabar durando 1:15. Si no se conoce la duración (falta el metadato), se
+// deja a criterio del modelo sin una cifra concreta que inventar.
+function durationBrief(durationSec: number | null): string {
+  if (!durationSec || durationSec <= 0) {
+    return "\nNo se conoce la duración exacta del original: no te excedas de lo necesario para transmitir la idea con dinamismo — mejor corto y directo que largo y denso.\n";
+  }
+  const targetWords = Math.round(durationSec * WORDS_PER_SECOND);
+  const mm = Math.floor(durationSec / 60);
+  const ss = Math.round(durationSec % 60);
+  const label = mm > 0 ? `${mm}:${String(ss).padStart(2, "0")}` : `${ss}s`;
+  return (
+    `\n--- DURACIÓN OBJETIVO (MUY IMPORTANTE) ---\n` +
+    `El video original dura ${label} (~${targetWords} palabras habladas a ritmo natural). Tu guion completo ` +
+    `(hook+puente+body+cta leído en voz alta) debe durar PRÁCTICAMENTE LO MISMO — nunca bastante más. Si el ` +
+    `original tiene partes redundantes o de relleno, CÓRTALAS para acercarte a esa duración mientras lo haces ` +
+    `más dinámico; no añadas contenido para compensar un recorte.\n`
+  );
 }
 
 // ─── Pipeline completo para UN video ─────────────────────────────────────────
@@ -162,8 +202,9 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
   for (const format of formats) {
     try {
       const genPrompt =
-        `${formatBrief(format as "reel" | "youtube")}\n\n` +
-        `--- VIDEO ORIGINAL (@${video.account_handle}, ${video.account_platform}) ---\n` +
+        `${formatBrief(format as "reel" | "youtube")}\n` +
+        durationBrief(video.duration_sec) +
+        `\n--- VIDEO ORIGINAL (@${video.account_handle}, ${video.account_platform}) ---\n` +
         `Vistas: ${video.views?.toLocaleString() ?? "?"}  Likes: ${video.likes?.toLocaleString() ?? "?"}  Comentarios: ${video.comments?.toLocaleString() ?? "?"}\n\n` +
         (videoWithAnalysis?.hook ? `GANCHO ANALIZADO: ${videoWithAnalysis.hook}\n` : "") +
         (videoWithAnalysis?.hook_type ? `TIPO DE GANCHO: ${videoWithAnalysis.hook_type}\n` : "") +
@@ -173,10 +214,11 @@ export async function analyseAndAdapt(userId: number, videoId: number): Promise<
         `\n--- PRIMERAS ~150 PALABRAS (≈10 seg) — ESTO VA EN 'hook', LITERAL, SIN CAMBIAR NADA ---\n${firstWords}\n` +
         `\n--- TRANSCRIPCIÓN COMPLETA ---\n${transcript.slice(0, 3000)}\n\n` +
         `INSTRUCCIÓN:\n` +
-        `1. Campo 'hook': copia EXACTAMENTE las primeras ~150 palabras de arriba. Ni una palabra diferente.\n` +
-        `2. Campo 'puente': 1-3 frases que conecten ese hook con mi marca/oferta de forma natural.\n` +
-        `3. Campo 'body': el resto del guion 100% adaptado a mi marca (voz, oferta, audiencia).\n` +
-        `El oyente escucha el hook idéntico al viral, luego el puente lo lleva a mi propuesta. Eso es todo.`;
+        `1. Campo 'hook': copia EXACTAMENTE las primeras ~150 palabras de arriba. Ni una palabra diferente (o su traducción literal si el original no está en español). PROHIBIDO tocarlo de cualquier otra forma.\n` +
+        `2. Decide si el tema conecta de forma NATURAL con mi negocio (IA aplicada a negocios digitales, marketing, ventas, automatización). Si NO conecta (contenido técnico/informativo sin ángulo de venta): 'puente' y 'cta' van vacíos o con un cierre suave, y 'body' se queda prácticamente como el original, solo traducido y ajustado de tono.\n` +
+        `3. Si SÍ conecta: 'puente' (1-2 frases) lleva del hook a mi oferta, y 'body'/'cta' se pueden alinear con ella — pero sin inflar el guion ni alejarte del contenido original.\n` +
+        `4. Respeta la DURACIÓN OBJETIVO de arriba: si el original es corto, el adaptado es corto. Corta lo redundante del original en vez de rellenar.\n` +
+        `La variación respecto al original debe ser mínima en todos los campos salvo el bridge opcional a mi oferta.`;
 
       const genMsg = await client(settings.anthropicKey).messages.create({
         model,
