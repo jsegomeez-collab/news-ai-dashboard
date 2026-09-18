@@ -28,10 +28,26 @@ function captionFor(item: DueItem): string {
   return (item.title ?? "").slice(0, 2100);
 }
 
-function hasPublication(contentItemId: number, accountId: number): boolean {
-  return !!db
-    .prepare(`SELECT 1 FROM content_item_publications WHERE content_item_id = ? AND publish_account_id = ?`)
-    .get(contentItemId, accountId);
+function hasAnyPublication(contentItemId: number): boolean {
+  return !!db.prepare(`SELECT 1 FROM content_item_publications WHERE content_item_id = ?`).get(contentItemId);
+}
+
+// Rotación: el MISMO vídeo nunca sale en más de una cuenta a la vez —
+// subirlo idéntico a varias cuentas dispara detección de spam/duplicado en
+// Instagram y puede acabar en shadowban. En su lugar, cada vídeo va a UNA
+// sola cuenta, turnándose en orden entre las activas (vídeo 1 -> cuenta 1,
+// vídeo 2 -> cuenta 2, ..., al llegar al final se vuelve a empezar).
+// El turno se calcula contando cuántos vídeos de este usuario ya se
+// asignaron antes — sin necesitar un contador aparte guardado en Ajustes.
+function nextAccountForRotation(userId: number, accounts: PublishAccount[]): PublishAccount {
+  const { n } = db
+    .prepare(
+      `SELECT COUNT(*) as n FROM content_item_publications cip
+       JOIN content_items ci ON ci.id = cip.content_item_id
+       WHERE ci.user_id = ?`
+    )
+    .get(userId) as { n: number };
+  return accounts[n % accounts.length];
 }
 
 function recordPublication(
@@ -57,10 +73,6 @@ async function publishToAccount(
   const text = captionFor(item);
   const publicationDateUTC = `${item.scheduled_date}T${item.scheduled_time ?? "12:00"}:00`;
   try {
-    // Se sube el vídeo una vez POR CUENTA destino (no se comparte entre
-    // cuentas): no se pudo confirmar sin una cuenta real de Metricool si un
-    // media subido bajo un blogId es referenciable desde otro, así que se
-    // prioriza la opción segura aunque suba el mismo archivo varias veces.
     const mediaUrl = await uploadVideo(token, mcUserId, account.blog_id, item.video_path);
     const postId = await createScheduledPost({
       userToken: token,
@@ -79,12 +91,12 @@ async function publishToAccount(
   }
 }
 
-// Programa en Metricool (una llamada por cuenta destino activa) todo
-// content_item ya listo para publicar (status 'por_subir' + vídeo adjunto)
-// que aún no se haya intentado con alguna cuenta. autoPublish deja en manos
-// de Metricool el momento exacto de publicar — este ciclo (cada POLL_CRON,
-// no hace falta más frecuencia) solo necesita crear el post con antelación,
-// no estar despierto justo a la hora programada.
+// Programa en Metricool todo content_item ya listo (status 'por_subir' +
+// vídeo adjunto) que aún no se haya asignado a ninguna cuenta — a UNA sola
+// cuenta, la que le toque por rotación (ver nextAccountForRotation).
+// autoPublish deja en manos de Metricool el momento exacto de publicar; este
+// ciclo (el POLL_CRON de siempre, no hace falta más frecuencia) solo crea el
+// post con antelación.
 export async function publishPendingContentItems(
   userId?: number
 ): Promise<{ checked: number; scheduled: number; errors: number; noAccounts: number }> {
@@ -104,6 +116,8 @@ export async function publishPendingContentItems(
     noAccounts = 0;
 
   for (const item of items) {
+    if (hasAnyPublication(item.id)) continue; // ya se le asignó su única cuenta
+
     const settings = readUserSettings(item.user_id);
     if (!settings.metricoolUserToken || !settings.metricoolUserId) continue; // sin Metricool configurado: se ignora
 
@@ -113,23 +127,19 @@ export async function publishPendingContentItems(
       continue;
     }
 
-    const pending = accounts.filter((a) => !hasPublication(item.id, a.id));
-    if (pending.length === 0) continue; // ya se intentó con todas las cuentas activas
-
     checked++;
-    for (const account of pending) {
-      const result = await publishToAccount(item, account, settings.metricoolUserToken, settings.metricoolUserId);
-      if (result === "scheduled") scheduled++;
-      else errors++;
-    }
+    const account = nextAccountForRotation(item.user_id, accounts);
+    const result = await publishToAccount(item, account, settings.metricoolUserToken, settings.metricoolUserId);
+    if (result === "scheduled") scheduled++;
+    else errors++;
 
-    const stillMissing = accounts.some((a) => !hasPublication(item.id, a.id));
-    if (!stillMissing) {
-      db.prepare(`UPDATE content_items SET status = 'subido', updated_at = ? WHERE id = ?`).run(
-        new Date().toISOString(),
-        item.id
-      );
-    }
+    // Una vez asignado (éxito o error) a su cuenta, el content_item se da por
+    // gestionado — el detalle de si esa cuenta concreta falló queda en
+    // content_item_publications.status/error_msg, visible en el calendario.
+    db.prepare(`UPDATE content_items SET status = 'subido', updated_at = ? WHERE id = ?`).run(
+      new Date().toISOString(),
+      item.id
+    );
   }
 
   return { checked, scheduled, errors, noAccounts };

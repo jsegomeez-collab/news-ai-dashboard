@@ -573,19 +573,20 @@ CREATE TABLE IF NOT EXISTS publish_accounts (
 );
 CREATE INDEX IF NOT EXISTS idx_publish_accounts_user ON publish_accounts(user_id);
 
--- Una fila por combinación (content_item x cuenta destino): el mismo vídeo
--- puede salir bien en una cuenta y fallar en otra, así que el resultado se
--- guarda por separado en vez de un único estado en content_items.
+-- Una fila por content_item: a QUÉ cuenta se asignó (por rotación, ver
+-- publish.ts) y el resultado de ese intento. UNIQUE(content_item_id) a
+-- propósito, no (content_item_id, publish_account_id): cada vídeo va a UNA
+-- sola cuenta, nunca a varias a la vez (el mismo vídeo en varias cuentas
+-- dispara detección de duplicado/spam en Instagram y puede shadowbanear).
 CREATE TABLE IF NOT EXISTS content_item_publications (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-  content_item_id     INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+  content_item_id     INTEGER NOT NULL UNIQUE REFERENCES content_items(id) ON DELETE CASCADE,
   publish_account_id  INTEGER NOT NULL REFERENCES publish_accounts(id) ON DELETE CASCADE,
   metricool_post_id   TEXT,
   status              TEXT NOT NULL DEFAULT 'pending', -- pending|scheduled|error
   error_msg           TEXT,
   created_at          TEXT NOT NULL,
-  updated_at          TEXT NOT NULL,
-  UNIQUE(content_item_id, publish_account_id)
+  updated_at          TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_cip_content_item ON content_item_publications(content_item_id);
 `);
