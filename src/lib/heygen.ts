@@ -72,22 +72,33 @@ export async function listAvatars(apiKey: string): Promise<HeygenAvatarOption[]>
 }
 
 export type HeygenVoiceOption = { id: string; label: string; language: string | null; previewUrl: string | null };
-// El MCP oficial de HeyGen lista TODAS las voces sin ningún filtro "solo las
-// mías" (get_voices() en su propio código no lo ofrece) — a diferencia de
-// avatares, no hay un endpoint confirmado equivalente a
-// avatar_group.list?include_public=false para voces clonadas. `type` es un
-// campo visto en alguna respuesta de ejemplo con valor "public"; se usa aquí
-// como filtro best-effort (todo lo que NO sea "public"), y si eso deja la
-// lista vacía se enseña la lista completa entera — mejor que no enseñar nada,
-// y tu propia voz clonada la reconocerás por el nombre que le pusiste.
+// La lista v1 de esto (filtrar en el CLIENTE por el campo `type` de cada
+// respuesta) no funcionó: seguían saliendo las voces genéricas del catálogo.
+// La documentación de HeyGen sí confirma que /v3/voices acepta `type` como
+// parámetro DE LA PETICIÓN ("filterable by type, engine, language, and
+// gender") — se intenta aquí con type=cloned directamente en la llamada, en
+// vez de traer todo y filtrar después. Si esto sigue sin traer tu voz
+// clonada, el valor real del enum puede no ser "cloned" — habría que probar
+// con la respuesta completa (sin filtro) para ver qué valor de `type` trae
+// de verdad tu voz.
 type RawVoice = { voice_id: string; name?: string; language?: string; preview_audio_url?: string; type?: string };
 
 export async function listVoices(apiKey: string): Promise<HeygenVoiceOption[]> {
-  const voices = (await heygenFetch<RawVoice[]>(apiKey, "/v3/voices")) ?? [];
-  const mine = voices.filter((v) => v.type && v.type !== "public");
-  return (mine.length > 0 ? mine : voices).map((v) => ({
+  // Si "cloned" no fuera un valor válido del enum, HeyGen podría rechazar la
+  // petición en vez de devolver una lista vacía — por eso el catch, para caer
+  // a la lista completa en vez de romper el botón entero.
+  const cloned = await heygenFetch<RawVoice[]>(apiKey, "/v3/voices?type=cloned").catch(() => [] as RawVoice[]);
+  const usedFilter = cloned.length > 0;
+  const voices = usedFilter ? cloned : ((await heygenFetch<RawVoice[]>(apiKey, "/v3/voices")) ?? []);
+  return voices.map((v) => ({
     id: v.voice_id,
-    label: v.language ? `${v.name || v.voice_id} (${v.language})` : v.name || v.voice_id,
+    // Si el filtro type=cloned no trajo nada y tocó enseñar el catálogo
+    // completo, se añade el `type` real de cada voz entre corchetes — así,
+    // si tu clon sigue sin distinguirse, vemos de un vistazo con qué valor
+    // real viene marcada en vez de adivinar otra vez a ciegas.
+    label:
+      (v.language ? `${v.name || v.voice_id} (${v.language})` : v.name || v.voice_id) +
+      (!usedFilter && v.type ? ` [${v.type}]` : ""),
     language: v.language ?? null,
     previewUrl: v.preview_audio_url ?? null,
   }));
