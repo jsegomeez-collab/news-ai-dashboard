@@ -34,9 +34,17 @@ async function heygenFetch<T>(apiKey: string, path: string, init: RequestInit = 
 export type HeygenAvatarOption = { id: string; label: string; previewUrl: string | null };
 type RawLook = { id: string; name?: string; preview_image_url?: string; thumbnail_url?: string };
 
+// GET /v3/avatars/looks (y /v3/voices más abajo) devuelven la lista como un
+// ARRAY PLANO bajo "data" — {"data": [...], "has_more":..., "next_token":...}
+// — no {"data": {"looks": [...]}} como se asumió al escribir esto la primera
+// vez. heygenFetch ya desenvuelve el "data" exterior; el bug real era tratar
+// ese array como si tuviera además una clave "looks"/"voices" dentro, que no
+// existe — por eso la lista salía siempre vacía con una clave real y
+// funcionando (200 OK, no un error de auth). Corregido y confirmado contra
+// la documentación real de HeyGen tras fallar con una clave real del usuario.
 export async function listAvatars(apiKey: string): Promise<HeygenAvatarOption[]> {
-  const json = await heygenFetch<{ looks?: RawLook[] }>(apiKey, "/v3/avatars/looks");
-  return (json.looks ?? []).map((l) => ({
+  const looks = await heygenFetch<RawLook[]>(apiKey, "/v3/avatars/looks");
+  return (looks ?? []).map((l) => ({
     id: l.id,
     label: l.name || l.id,
     previewUrl: l.preview_image_url ?? l.thumbnail_url ?? null,
@@ -44,15 +52,15 @@ export async function listAvatars(apiKey: string): Promise<HeygenAvatarOption[]>
 }
 
 export type HeygenVoiceOption = { id: string; label: string; language: string | null; previewUrl: string | null };
-type RawVoice = { voice_id: string; name?: string; language?: string; preview_audio?: string };
+type RawVoice = { voice_id: string; name?: string; language?: string; preview_audio_url?: string };
 
 export async function listVoices(apiKey: string): Promise<HeygenVoiceOption[]> {
-  const json = await heygenFetch<{ voices?: RawVoice[] }>(apiKey, "/v3/voices");
-  return (json.voices ?? []).map((v) => ({
+  const voices = await heygenFetch<RawVoice[]>(apiKey, "/v3/voices");
+  return (voices ?? []).map((v) => ({
     id: v.voice_id,
     label: v.language ? `${v.name || v.voice_id} (${v.language})` : v.name || v.voice_id,
     language: v.language ?? null,
-    previewUrl: v.preview_audio ?? null,
+    previewUrl: v.preview_audio_url ?? null,
   }));
 }
 
