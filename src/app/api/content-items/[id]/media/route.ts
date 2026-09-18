@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { getUser } from "@/lib/auth";
-import { getContentItem, setContentItemMedia, clearContentItemMedia, type MediaSlot } from "@/lib/contentItems";
-import { saveUpload, deleteUploadIfExists, isAllowedMediaType, safeMediaContentType, MAX_UPLOAD_BYTES } from "@/lib/uploads";
+import { getContentItem, setContentItemMedia, clearContentItemMedia, deleteMediaUnlessInDrive, type MediaSlot } from "@/lib/contentItems";
+import { saveUpload, isAllowedMediaType, safeMediaContentType, MAX_UPLOAD_BYTES } from "@/lib/uploads";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     mime: file.type || "application/octet-stream",
     size: saved.size,
   });
-  deleteUploadIfExists(previous);
+  deleteMediaUnlessInDrive(previous);
 
   return NextResponse.json({ ok: true, originalName: safeFilename(file.name), size: saved.size });
 }
@@ -117,6 +117,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!slot) return NextResponse.json({ error: "slot debe ser 'audio' o 'video'" }, { status: 400 });
 
   const path = clearContentItemMedia(user.id, Number(id), slot);
-  deleteUploadIfExists(path);
+  deleteMediaUnlessInDrive(path);
   return NextResponse.json({ ok: true });
 }

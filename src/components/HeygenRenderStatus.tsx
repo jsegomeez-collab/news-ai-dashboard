@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { usePoll } from "./usePoll";
 
 type Render = {
@@ -13,19 +14,62 @@ const STATUS_TEXT: Record<string, string> = {
   captioning: "✍️ Añadiendo subtítulos y título (Whisper + Remotion)…",
 };
 
-// Estado del vídeo con avatar de un guion (script o adaptado de competencia).
-// Si nunca se lanzó ninguno (sin HeyGen configurado, o el guion aún no está
-// 'aprobado'), no pinta nada — no hay nada que mostrar todavía.
+// Estado del vídeo con avatar de un guion (script o adaptado de competencia),
+// con botón para arrancarlo a mano (sin esperar a que el guion esté
+// 'aprobado' ni al ciclo automático del worker) y para reintentar si falló.
 export function HeygenRenderStatus({ type, id }: { type: "script" | "competitor_script"; id: number }) {
-  const { data } = usePoll<{ render: Render }>(`/api/heygen/renders?type=${type}&id=${id}`, 8000);
+  const { data, refresh } = usePoll<{ render: Render }>(`/api/heygen/renders?type=${type}&id=${id}`, 8000);
   const render = data?.render;
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
-  if (!render) return null;
+  async function start() {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const res = await fetch("/api/heygen/renders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, id }),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string };
+      if (!json.ok) setStartError(json.error ?? "No se pudo lanzar el vídeo");
+      else refresh();
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  if (!render) {
+    return (
+      <div className="rounded bg-ink/60 p-3">
+        <button
+          onClick={start}
+          disabled={starting}
+          className="rounded border border-edge px-2.5 py-1 text-xs text-zinc-300 hover:border-brand hover:text-brand disabled:opacity-50"
+        >
+          {starting ? "Lanzando…" : "🎬 Generar vídeo con avatar"}
+        </button>
+        {startError && <p className="mt-2 text-xs text-red-400">{startError}</p>}
+      </div>
+    );
+  }
 
   if (render.status === "error") {
     return (
       <div className="rounded bg-red-950/40 p-3 text-sm text-red-300">
-        ⚠️ Vídeo con avatar: {render.error_msg || "error desconocido"}
+        <p>⚠️ Vídeo con avatar: {render.error_msg || "error desconocido"}</p>
+        <p className="mt-1 text-xs text-red-300/70">
+          Si HeyGen llegó a generar el vídeo, se guardó igual en tu Drive (carpeta &quot;🤖 Vídeos generados&quot;), sin subtítulos.
+        </p>
+        <button
+          onClick={start}
+          disabled={starting}
+          className="mt-2 rounded border border-red-800 px-2.5 py-1 text-xs text-red-300 hover:border-red-500 disabled:opacity-50"
+        >
+          {starting ? "Lanzando…" : "🔁 Reintentar"}
+        </button>
+        {startError && <p className="mt-2 text-xs text-red-400">{startError}</p>}
       </div>
     );
   }
@@ -44,6 +88,7 @@ export function HeygenRenderStatus({ type, id }: { type: "script" | "competitor_
           {Math.round(render.duration_sec)}s{render.cost_usd ? ` · ~$${render.cost_usd.toFixed(2)}` : ""}
         </p>
       )}
+      <p className="mt-1 text-xs text-zinc-600">También guardado en tu Drive, carpeta &quot;🤖 Vídeos generados&quot;.</p>
     </div>
   );
 }

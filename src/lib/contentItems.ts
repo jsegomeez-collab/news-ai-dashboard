@@ -2,6 +2,15 @@ import { statSync } from "node:fs";
 import { db } from "./db";
 import { deleteUploadIfExists } from "./uploads";
 import { nextAutoSlot } from "./autoSchedule";
+import { pathOwnedByDrive } from "./drive";
+
+// El pipeline automático (heygen-generate.ts) adjunta el MISMO archivo físico
+// aquí y en Drive — si Drive todavía lo referencia, borrar la publicación del
+// Calendario NO debe borrar el archivo (Drive sigue creyendo que existe).
+export function deleteMediaUnlessInDrive(path: string | null): void {
+  if (path && pathOwnedByDrive(path)) return;
+  deleteUploadIfExists(path);
+}
 
 export type MediaSlot = "audio" | "video";
 
@@ -178,13 +187,15 @@ export function clearContentItemMedia(userId: number, id: number, slot: MediaSlo
   return previous;
 }
 
-// Borra el item y ambos archivos (audio+video) del disco si existían.
+// Borra el item y ambos archivos (audio+video) del disco si existían — salvo
+// que Drive siga referenciando ese mismo archivo (vídeos del pipeline
+// automático, ver deleteMediaUnlessInDrive arriba).
 export function deleteContentItem(userId: number, id: number): boolean {
   const current = getContentItem(userId, id);
   if (!current) return false;
   db.prepare(`DELETE FROM content_items WHERE id = ? AND user_id = ?`).run(id, userId);
-  deleteUploadIfExists(current.audio_path);
-  deleteUploadIfExists(current.video_path);
+  deleteMediaUnlessInDrive(current.audio_path);
+  deleteMediaUnlessInDrive(current.video_path);
   return true;
 }
 

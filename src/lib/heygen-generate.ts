@@ -1,3 +1,4 @@
+import { existsSync, statSync } from "node:fs";
 import { db } from "./db";
 import { readUserSettings } from "./settings";
 import { buildScriptText } from "./scriptText";
@@ -10,6 +11,7 @@ import { createTikTokStyleCaptions } from "@remotion/captions";
 import { renderCaptionedVideo } from "./remotion-render";
 import { generateVideoTitle } from "./videoTitle";
 import { scheduleGeneratedVideo } from "./contentItems";
+import { createFileRecord, updateFile, ensureGeneratedVideosFolder } from "./drive";
 
 export type SourceType = "script" | "competitor_script";
 
@@ -212,6 +214,38 @@ export async function pollHeygenRenders(userId?: number): Promise<{ checked: num
 // vídeo: si el usuario todavía no configuró su clave de OpenAI (la misma que
 // ya usa para transcribir competencia), el render se queda en 'captioning' en
 // vez de fallar, y se retoma solo en el ciclo en que la configure.
+// El resultado del pipeline SIEMPRE aterriza en Drive — completo (con
+// subtítulos) si todo fue bien, o crudo (solo el avatar, tal cual lo dio
+// HeyGen) si falló el paso de edición — para que un fallo de Whisper/Remotion
+// nunca se traduzca en "el vídeo desapareció". No mueve ni copia el archivo,
+// solo lo registra donde ya está.
+function saveGeneratedVideoToDrive(
+  userId: number,
+  sourceType: SourceType,
+  sourceId: number,
+  title: string | null,
+  videoPath: string,
+  partial: boolean,
+  note: string | null
+): void {
+  try {
+    const folderId = ensureGeneratedVideosFolder(userId);
+    const name = `${title || "vídeo"}${partial ? " (sin subtítulos)" : ""}.mp4`.slice(0, 200);
+    const fileId = createFileRecord(userId, {
+      folderId,
+      originalName: name,
+      path: videoPath,
+      mime: "video/mp4",
+      size: statSync(videoPath).size,
+      kind: "video",
+      status: "por_subir",
+    });
+    updateFile(userId, fileId, { linkedType: sourceType, linkedId: sourceId, notes: note });
+  } catch (e) {
+    console.warn(`[heygen] no se pudo guardar en Drive (${sourceType} ${sourceId}):`, (e as Error).message);
+  }
+}
+
 export async function processCaptioning(
   userId?: number
 ): Promise<{ checked: number; completed: number; errors: number; noKey: number }> {
@@ -270,11 +304,30 @@ export async function processCaptioning(
 
       deleteUploadIfExists(r.video_path); // el crudo de HeyGen ya no hace falta, solo ocupaba disco
       markCaptioningDone(r.source_type, r.source_id, outPath);
-      scheduleGeneratedVideo(r.user_id, r.source_type, r.source_id, titleInfo?.title ?? source?.title ?? null, outPath);
+      const finalTitle = titleInfo?.title ?? source?.title ?? null;
+      saveGeneratedVideoToDrive(r.user_id, r.source_type, r.source_id, finalTitle, outPath, false, null);
+      scheduleGeneratedVideo(r.user_id, r.source_type, r.source_id, finalTitle, outPath);
       completed++;
     } catch (e) {
-      console.warn(`[heygen] subtítulos render ${r.id} (${r.source_type} ${r.source_id}):`, (e as Error).message);
-      markRenderError(r.source_type, r.source_id, (e as Error).message);
+      const msg = (e as Error).message;
+      console.warn(`[heygen] subtítulos render ${r.id} (${r.source_type} ${r.source_id}):`, msg);
+      markRenderError(r.source_type, r.source_id, msg);
+      // No perder el trabajo de HeyGen aunque falle Whisper/Remotion: el
+      // crudo (sin subtítulos ni título) se guarda igual en Drive, con una
+      // nota explicando qué faltó. No se programa en el Calendario porque no
+      // está terminado — solo Drive, para que quede accesible.
+      if (existsSync(r.video_path)) {
+        const source = getSource(r.user_id, r.source_type, r.source_id);
+        saveGeneratedVideoToDrive(
+          r.user_id,
+          r.source_type,
+          r.source_id,
+          source?.title ?? null,
+          r.video_path,
+          true,
+          `Vídeo del avatar sin subtítulos — falló el paso de edición: ${msg.slice(0, 300)}`
+        );
+      }
       errors++;
     }
   }

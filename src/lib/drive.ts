@@ -141,15 +141,52 @@ export function getFile(userId: number, fileId: number): DriveFile | null {
 
 export function createFileRecord(
   userId: number,
-  data: { folderId: number | null; originalName: string; path: string; mime: string; size: number; kind: string }
+  data: {
+    folderId: number | null;
+    originalName: string;
+    path: string;
+    mime: string;
+    size: number;
+    kind: string;
+    status?: string;
+  }
 ): number {
   const res = db
     .prepare(
       `INSERT INTO drive_files(user_id, folder_id, original_name, path, mime, size, kind, status, uploaded_at)
-       VALUES(?, ?, ?, ?, ?, ?, ?, 'por_grabar', ?)`
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(userId, data.folderId, data.originalName, data.path, data.mime, data.size, data.kind, new Date().toISOString());
+    .run(
+      userId,
+      data.folderId,
+      data.originalName,
+      data.path,
+      data.mime,
+      data.size,
+      data.kind,
+      data.status ?? "por_grabar",
+      new Date().toISOString()
+    );
   return Number(res.lastInsertRowid);
+}
+
+// Carpeta fija donde aterrizan los vídeos que produce el pipeline automático
+// (HeyGen + Remotion) — se crea sola la primera vez que hace falta, para no
+// mezclar lo generado por IA con lo que el usuario sube a mano en la raíz.
+export function ensureGeneratedVideosFolder(userId: number): number {
+  const existing = db
+    .prepare(`SELECT id FROM drive_folders WHERE user_id = ? AND parent_id IS NULL AND name = ?`)
+    .get(userId, "🤖 Vídeos generados") as { id: number } | undefined;
+  if (existing) return existing.id;
+  return createFolder(userId, "🤖 Vídeos generados", null);
+}
+
+// El pipeline automático guarda el MISMO archivo físico en drive_files y en
+// content_items (Calendario) — sin esto, borrar la publicación del Calendario
+// borraría también el archivo que Drive sigue creyendo que tiene. Drive es
+// el dueño real: solo se borra el archivo si NINGÚN drive_file lo referencia.
+export function pathOwnedByDrive(path: string): boolean {
+  return !!db.prepare(`SELECT 1 FROM drive_files WHERE path = ?`).get(path);
 }
 
 export function updateFile(
