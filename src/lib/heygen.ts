@@ -85,42 +85,16 @@ export async function listAvatars(apiKey: string): Promise<HeygenAvatarOption[]>
   return options;
 }
 
-export type HeygenVoiceOption = { id: string; label: string; language: string | null; previewUrl: string | null };
-// La lista v1 de esto (filtrar en el CLIENTE por el campo `type` de cada
-// respuesta) no funcionó: seguían saliendo las voces genéricas del catálogo.
-// La documentación de HeyGen sí confirma que /v3/voices acepta `type` como
-// parámetro DE LA PETICIÓN ("filterable by type, engine, language, and
-// gender") — se intenta aquí con type=cloned directamente en la llamada, en
-// vez de traer todo y filtrar después. Si esto sigue sin traer tu voz
-// clonada, el valor real del enum puede no ser "cloned" — habría que probar
-// con la respuesta completa (sin filtro) para ver qué valor de `type` trae
-// de verdad tu voz.
-type RawVoice = { voice_id: string; name?: string; language?: string; preview_audio_url?: string; type?: string };
-
-export async function listVoices(apiKey: string): Promise<HeygenVoiceOption[]> {
-  // Si "cloned" no fuera un valor válido del enum, HeyGen podría rechazar la
-  // petición en vez de devolver una lista vacía — por eso el catch, para caer
-  // a la lista completa en vez de romper el botón entero.
-  const cloned = await heygenFetch<RawVoice[]>(apiKey, "/v3/voices?type=cloned").catch(() => [] as RawVoice[]);
-  const usedFilter = cloned.length > 0;
-  const voices = usedFilter ? cloned : ((await heygenFetch<RawVoice[]>(apiKey, "/v3/voices")) ?? []);
-  return voices.map((v) => ({
-    id: v.voice_id,
-    // Si el filtro type=cloned no trajo nada y tocó enseñar el catálogo
-    // completo, se añade el `type` real de cada voz entre corchetes — así,
-    // si tu clon sigue sin distinguirse, vemos de un vistazo con qué valor
-    // real viene marcada en vez de adivinar otra vez a ciegas.
-    label:
-      (v.language ? `${v.name || v.voice_id} (${v.language})` : v.name || v.voice_id) +
-      (!usedFilter && v.type ? ` [${v.type}]` : ""),
-    language: v.language ?? null,
-    previewUrl: v.preview_audio_url ?? null,
-  }));
-}
+// No hay selector manual de voz: tu Digital Twin clona la voz automáticamente
+// del mismo vídeo de entrenamiento (viaja pegada al avatar como
+// defaultVoiceId, ver listAvatars), así que no hace falta listar ni elegir
+// voces sueltas — eso solo añadiría un desplegable redundante y una vía por
+// la que el guion podría acabar leído con una voz que no es la del clon.
+type RawVoice = { voice_id: string; name?: string; language?: string };
 
 // Nombre de una voz concreta por su id — se usa para etiquetar bien la voz
-// clonada que viaja pegada al avatar (defaultVoiceId), que no aparece en el
-// listado general de voces y por tanto no trae nombre por su cuenta.
+// clonada que viaja pegada al avatar (defaultVoiceId), que no aparece en
+// ningún listado general y por tanto no trae nombre por su cuenta.
 export async function getVoiceLabel(apiKey: string, voiceId: string): Promise<string> {
   try {
     const v = await heygenFetch<RawVoice>(apiKey, `/v3/voices/${encodeURIComponent(voiceId)}`);

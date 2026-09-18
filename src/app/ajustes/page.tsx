@@ -49,7 +49,6 @@ type HeygenAvatarOption = {
   defaultVoiceId: string | null;
   defaultVoiceLabel: string | null;
 };
-type HeygenVoiceOption = { id: string; label: string; language: string | null };
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -79,9 +78,8 @@ export default function AjustesPage() {
   const [heygenKeyInput, setHeygenKeyInput] = useState("");
   const [savedHeygenKey, setSavedHeygenKey] = useState(false);
   const [heygenAvatars, setHeygenAvatars] = useState<HeygenAvatarOption[] | null>(null);
-  const [heygenVoices, setHeygenVoices] = useState<HeygenVoiceOption[] | null>(null);
   const [heygenLoadError, setHeygenLoadError] = useState<string | null>(null);
-  const [loadingHeygen, setLoadingHeygen] = useState<"avatars" | "voices" | null>(null);
+  const [loadingHeygen, setLoadingHeygen] = useState<"avatars" | null>(null);
   const [mcTokenInput, setMcTokenInput] = useState("");
   const [mcUserIdInput, setMcUserIdInput] = useState("");
   const [savedMcToken, setSavedMcToken] = useState(false);
@@ -195,20 +193,10 @@ export default function AjustesPage() {
     }
     setLoadingHeygen(null);
   }
-  async function loadHeygenVoices() {
-    setLoadingHeygen("voices");
-    setHeygenLoadError(null);
-    const res = await fetch("/api/heygen/voices", { cache: "no-store" });
-    const json = (await res.json()) as { voices?: HeygenVoiceOption[]; error?: string };
-    if (json.error) setHeygenLoadError(json.error);
-    else setHeygenVoices(json.voices ?? []);
-    setLoadingHeygen(null);
-  }
   function pickHeygenAvatar(a: HeygenAvatarOption) {
     // Tu Digital Twin clona la voz automáticamente del mismo vídeo de
-    // entrenamiento — se autorrellena aquí en vez de obligarte a ir a
-    // buscarla aparte en "Cargar mis voces" (ahí ni siquiera aparece, es una
-    // voz pegada al avatar, no una entrada suelta de tu librería de voces).
+    // entrenamiento — no es una entrada suelta de tu librería de voces, así
+    // que no hay selector aparte para ella: viaja siempre pegada al avatar.
     patch({
       heygenAvatarId: a.id,
       heygenAvatarLabel: a.label,
@@ -216,9 +204,6 @@ export default function AjustesPage() {
         ? { heygenVoiceId: a.defaultVoiceId, heygenVoiceLabel: a.defaultVoiceLabel || "Voz de tu clon" }
         : {}),
     });
-  }
-  function pickHeygenVoice(v: HeygenVoiceOption) {
-    patch({ heygenVoiceId: v.id, heygenVoiceLabel: v.label });
   }
 
   // El userId de Metricool no es secreto (solo el token lo es), así que viaja
@@ -416,39 +401,6 @@ export default function AjustesPage() {
                   {heygenAvatars.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.label}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            <div>
-              <div className="mb-1 flex items-center justify-between text-sm text-zinc-300">
-                <span>Voz</span>
-                <button
-                  onClick={loadHeygenVoices}
-                  disabled={loadingHeygen === "voices"}
-                  className="text-xs text-brand hover:underline disabled:opacity-50"
-                >
-                  {loadingHeygen === "voices" ? "Cargando…" : "Cargar mis voces"}
-                </button>
-              </div>
-              {s.heygenVoiceId && (
-                <p className="mb-1 text-xs text-zinc-500">Elegida: {s.heygenVoiceLabel || s.heygenVoiceId}</p>
-              )}
-              {heygenVoices && (
-                <select
-                  value={s.heygenVoiceId}
-                  onChange={(e) => {
-                    const v = heygenVoices.find((x) => x.id === e.target.value);
-                    if (v) pickHeygenVoice(v);
-                  }}
-                  className="w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200"
-                >
-                  <option value="">— elige una voz —</option>
-                  {heygenVoices.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.label}
                     </option>
                   ))}
                 </select>
