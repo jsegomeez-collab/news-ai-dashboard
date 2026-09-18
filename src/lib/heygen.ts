@@ -31,9 +31,22 @@ async function heygenFetch<T>(apiKey: string, path: string, init: RequestInit = 
   return ((json as { data?: T })?.data ?? json) as T;
 }
 
-export type HeygenAvatarOption = { id: string; label: string; previewUrl: string | null };
-type RawAvatarGroup = { id: string; name?: string; group_type?: string };
-type RawLook = { id: string; name?: string; group_id?: string; preview_image_url?: string; thumbnail_url?: string };
+// defaultVoiceId: al crear un "Digital Twin" en HeyGen, la voz se clona
+// AUTOMÁTICAMENTE del mismo vídeo de entrenamiento, sin ningún paso aparte —
+// por eso esa voz clonada nunca aparecía en /v3/voices (no es una "voz" suelta
+// de tu librería, viaja pegada al propio avatar). Va en avatar_group.default_voice_id
+// ("la voz efectiva del personaje") o, si el grupo no lo trae, en el
+// default_voice_id del look concreto.
+export type HeygenAvatarOption = { id: string; label: string; previewUrl: string | null; defaultVoiceId: string | null };
+type RawAvatarGroup = { id: string; name?: string; group_type?: string; default_voice_id?: string };
+type RawLook = {
+  id: string;
+  name?: string;
+  group_id?: string;
+  preview_image_url?: string;
+  thumbnail_url?: string;
+  default_voice_id?: string;
+};
 
 // GET /v3/avatars/looks a secas (usado en la versión anterior) es un catálogo
 // GENERAL que mezcla los públicos de HeyGen con los tuyos, sin parámetro real
@@ -57,7 +70,7 @@ export async function listAvatars(apiKey: string): Promise<HeygenAvatarOption[]>
       () => [] as RawLook[]
     );
     if (looks.length === 0) {
-      options.push({ id: g.id, label: g.name || g.id, previewUrl: null });
+      options.push({ id: g.id, label: g.name || g.id, previewUrl: null, defaultVoiceId: g.default_voice_id ?? null });
       continue;
     }
     for (const l of looks) {
@@ -65,6 +78,7 @@ export async function listAvatars(apiKey: string): Promise<HeygenAvatarOption[]>
         id: l.id,
         label: looks.length > 1 ? `${g.name || g.id} — ${l.name || l.id}` : g.name || l.name || l.id,
         previewUrl: l.preview_image_url ?? l.thumbnail_url ?? null,
+        defaultVoiceId: g.default_voice_id ?? l.default_voice_id ?? null,
       });
     }
   }
@@ -102,6 +116,18 @@ export async function listVoices(apiKey: string): Promise<HeygenVoiceOption[]> {
     language: v.language ?? null,
     previewUrl: v.preview_audio_url ?? null,
   }));
+}
+
+// Nombre de una voz concreta por su id — se usa para etiquetar bien la voz
+// clonada que viaja pegada al avatar (defaultVoiceId), que no aparece en el
+// listado general de voces y por tanto no trae nombre por su cuenta.
+export async function getVoiceLabel(apiKey: string, voiceId: string): Promise<string> {
+  try {
+    const v = await heygenFetch<RawVoice>(apiKey, `/v3/voices/${encodeURIComponent(voiceId)}`);
+    return v.language ? `${v.name || voiceId} (${v.language})` : v.name || voiceId;
+  } catch {
+    return "Voz de tu clon";
+  }
 }
 
 // Lanza la generación de un vídeo con tu avatar/voz leyendo `text`. Devuelve

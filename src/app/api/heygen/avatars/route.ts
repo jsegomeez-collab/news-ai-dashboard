@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
 import { readUserSettings } from "@/lib/settings";
-import { listAvatars } from "@/lib/heygen";
+import { listAvatars, getVoiceLabel } from "@/lib/heygen";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,16 @@ export async function GET(req: NextRequest) {
 
   try {
     const avatars = await listAvatars(settings.heygenKey);
-    return NextResponse.json({ avatars });
+    // Resuelve el nombre de la voz clonada que viaja con cada avatar (ver
+    // defaultVoiceId en heygen.ts) — pocos avatares normalmente, así que
+    // resolverlo aquí evita otra ida y vuelta desde el frontend.
+    const withVoiceLabel = await Promise.all(
+      avatars.map(async (a) => ({
+        ...a,
+        defaultVoiceLabel: a.defaultVoiceId ? await getVoiceLabel(settings.heygenKey, a.defaultVoiceId) : null,
+      }))
+    );
+    return NextResponse.json({ avatars: withVoiceLabel });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }

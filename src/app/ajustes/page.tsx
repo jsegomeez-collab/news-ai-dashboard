@@ -42,7 +42,13 @@ type Status = {
   heygenBudget: { videosToday: number; costToday: number; maxUsd: number };
   stats: { articles: number; classified: number; scripts: number; queuePending: number };
 };
-type HeygenAvatarOption = { id: string; label: string; previewUrl: string | null };
+type HeygenAvatarOption = {
+  id: string;
+  label: string;
+  previewUrl: string | null;
+  defaultVoiceId: string | null;
+  defaultVoiceLabel: string | null;
+};
 type HeygenVoiceOption = { id: string; label: string; language: string | null };
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -189,7 +195,17 @@ export default function AjustesPage() {
     setLoadingHeygen(null);
   }
   function pickHeygenAvatar(a: HeygenAvatarOption) {
-    patch({ heygenAvatarId: a.id, heygenAvatarLabel: a.label });
+    // Tu Digital Twin clona la voz automáticamente del mismo vídeo de
+    // entrenamiento — se autorrellena aquí en vez de obligarte a ir a
+    // buscarla aparte en "Cargar mis voces" (ahí ni siquiera aparece, es una
+    // voz pegada al avatar, no una entrada suelta de tu librería de voces).
+    patch({
+      heygenAvatarId: a.id,
+      heygenAvatarLabel: a.label,
+      ...(a.defaultVoiceId
+        ? { heygenVoiceId: a.defaultVoiceId, heygenVoiceLabel: a.defaultVoiceLabel || "Voz de tu clon" }
+        : {}),
+    });
   }
   function pickHeygenVoice(v: HeygenVoiceOption) {
     patch({ heygenVoiceId: v.id, heygenVoiceLabel: v.label });
@@ -373,6 +389,10 @@ export default function AjustesPage() {
               {s.heygenAvatarId && (
                 <p className="mb-1 text-xs text-zinc-500">Elegido: {s.heygenAvatarLabel || s.heygenAvatarId}</p>
               )}
+              <p className="mb-1 text-xs text-zinc-600">
+                Al elegir tu avatar se autorrellena también su voz clonada (HeyGen la crea junto
+                al avatar, del mismo vídeo — no hace falta buscarla aparte en &quot;Cargar mis voces&quot;).
+              </p>
               {heygenAvatars && (
                 <select
                   value={s.heygenAvatarId}
