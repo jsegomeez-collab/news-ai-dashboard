@@ -3,7 +3,7 @@ import { db } from "./db";
 import { readUserSettings, writeUserSettings } from "./settings";
 import { buildScriptText } from "./scriptText";
 import { saveBuffer, newUploadPath, deleteUploadIfExists } from "./uploads";
-import { heygenBudgetState, recordHeygenUsage } from "./heygenUsage";
+import { heygenBudgetState, recordHeygenUsage, pendingHeygenCost } from "./heygenUsage";
 import {
   createAvatarVideo,
   getVideoStatus,
@@ -77,14 +77,19 @@ export function getRender(userId: number, type: SourceType, id: number): HeygenR
   );
 }
 
-function upsertRenderProcessing(userId: number, type: SourceType, id: number, heygenVideoId: string): void {
+// cost_usd guarda de entrada la ESTIMACIÓN previa (estimateCostFromText) — no
+// el coste real, que solo se conoce al terminar — para que pendingHeygenCost()
+// pueda contar este render como gasto ya comprometido mientras sigue en
+// curso. markRenderDownloaded() la sobrescribe con el coste real en cuanto
+// HeyGen termina.
+function upsertRenderProcessing(userId: number, type: SourceType, id: number, heygenVideoId: string, estimatedCostUsd: number): void {
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO heygen_renders(user_id, source_type, source_id, heygen_video_id, status, created_at, updated_at)
-     VALUES(?, ?, ?, ?, 'processing', ?, ?)
+    `INSERT INTO heygen_renders(user_id, source_type, source_id, heygen_video_id, status, cost_usd, created_at, updated_at)
+     VALUES(?, ?, ?, ?, 'processing', ?, ?, ?)
      ON CONFLICT(source_type, source_id) DO UPDATE SET
-       heygen_video_id = excluded.heygen_video_id, status = 'processing', error_msg = NULL, updated_at = excluded.updated_at`
-  ).run(userId, type, id, heygenVideoId, now, now);
+       heygen_video_id = excluded.heygen_video_id, status = 'processing', cost_usd = excluded.cost_usd, error_msg = NULL, updated_at = excluded.updated_at`
+  ).run(userId, type, id, heygenVideoId, estimatedCostUsd, now, now);
 }
 
 // Solo se llega aquí con status previo 'error' (nunca 'completed'/'processing',
@@ -154,9 +159,16 @@ export async function queueAvatarVideo(
 
   // Chequeo PREVIO por estimación (la duración/coste real solo se sabe al
   // terminar) — evita lanzar un vídeo que ya sabemos que se saldría del tope.
+  // Suma también el coste ESTIMADO de los renders que ya están en curso
+  // (pendingHeygenCost): sin esto, lanzar varios seguidos (selección
+  // múltiple, o el propio ciclo automático que existía antes) dejaba pasar a
+  // todos porque ninguno de los anteriores había "gastado" nada todavía a
+  // ojos de heygenBudgetState — así fue como se coló el gasto de más que
+  // vació la cuenta de HeyGen sin avisar.
   const budget = heygenBudgetState(userId);
   const estimate = estimateCostFromText(text);
-  if (!budget.canGenerate || (budget.maxUsd > 0 && budget.costToday + estimate > budget.maxUsd)) {
+  const pending = pendingHeygenCost(userId);
+  if (!budget.canGenerate || (budget.maxUsd > 0 && budget.costToday + pending + estimate > budget.maxUsd)) {
     return { ok: false, capped: true, error: budget.reason ?? "Tope diario de gasto en HeyGen alcanzado" };
   }
 
@@ -166,7 +178,7 @@ export async function queueAvatarVideo(
       voiceId,
       text,
     });
-    upsertRenderProcessing(userId, type, id, videoId);
+    upsertRenderProcessing(userId, type, id, videoId, estimate);
     return { ok: true };
   } catch (e) {
     markRenderError(type, id, (e as Error).message);
@@ -174,13 +186,40 @@ export async function queueAvatarVideo(
   }
 }
 
+// Guarda qué renders (source_type:source_id) están AHORA MISMO a mitad de un
+// pollHeygenRenders/processCaptioning, para que dos llamadas solapadas dentro
+// del mismo proceso (p.ej. el ciclo del worker y una comprobación al vuelo
+// desde /api/heygen/renders, o dos pestañas del navegador haciendo poll cada
+// pocos segundos) nunca lancen dos veces la MISMA transcripción/render — eso
+// duplicaría el gasto en Whisper por nada.
+const renderKeysInFlight = new Set<string>();
+
+function scopeClause(userId?: number, source?: { type: SourceType; id: number }): { clause: string; params: unknown[] } {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (userId !== undefined) {
+    clauses.push("user_id = ?");
+    params.push(userId);
+  }
+  if (source) {
+    clauses.push("source_type = ? AND source_id = ?");
+    params.push(source.type, source.id);
+  }
+  return { clause: clauses.length ? ` AND ${clauses.join(" AND ")}` : "", params };
+}
+
 // Sondea los renders en curso (mismo patrón que pollClassifyBatches /
 // transcribePendingVideos: lanzar -> sondear en el ciclo siguiente -> guardar
 // al terminar). Descarga el mp4 en cuanto HeyGen lo da por completado, porque
 // su URL de descarga no es necesariamente estable a largo plazo.
-export async function pollHeygenRenders(userId?: number): Promise<{ checked: number; downloaded: number; errors: number }> {
-  const scope = userId !== undefined ? ` AND user_id = ?` : ``;
-  const params = userId !== undefined ? [userId] : [];
+// `source` acota a un único guion — lo usa /api/heygen/renders para comprobar
+// AL VUELO justo el que se está mirando en pantalla, en vez de esperar hasta
+// 2h al siguiente ciclo completo del worker (POLL_CRON).
+export async function pollHeygenRenders(
+  userId?: number,
+  source?: { type: SourceType; id: number }
+): Promise<{ checked: number; downloaded: number; errors: number }> {
+  const { clause: scope, params } = scopeClause(userId, source);
   const rows = db
     .prepare(
       `SELECT id, user_id, source_type, source_id, heygen_video_id
@@ -199,9 +238,12 @@ export async function pollHeygenRenders(userId?: number): Promise<{ checked: num
     errors = 0;
 
   for (const r of rows) {
+    const key = `${r.source_type}:${r.source_id}`;
+    if (renderKeysInFlight.has(key)) continue;
     const settings = readUserSettings(r.user_id);
     if (!settings.heygenKey) continue; // clave borrada entretanto: se revisa si vuelve a configurarse
     checked++;
+    renderKeysInFlight.add(key);
     try {
       const st = await getVideoStatus(settings.heygenKey, r.heygen_video_id);
       if (st.status === "completed" && st.videoUrl) {
@@ -223,6 +265,8 @@ export async function pollHeygenRenders(userId?: number): Promise<{ checked: num
       console.warn(`[heygen] render ${r.id} (${r.source_type} ${r.source_id}):`, (e as Error).message);
       markRenderError(r.source_type, r.source_id, (e as Error).message);
       errors++;
+    } finally {
+      renderKeysInFlight.delete(key);
     }
   }
   return { checked, downloaded, errors };
@@ -266,11 +310,12 @@ function saveGeneratedVideoToDrive(
   }
 }
 
+// `source` acota a un único guion — ver pollHeygenRenders más arriba.
 export async function processCaptioning(
-  userId?: number
+  userId?: number,
+  source?: { type: SourceType; id: number }
 ): Promise<{ checked: number; completed: number; errors: number; noKey: number }> {
-  const scope = userId !== undefined ? ` AND user_id = ?` : ``;
-  const params = userId !== undefined ? [userId] : [];
+  const { clause: scope, params } = scopeClause(userId, source);
   const rows = db
     .prepare(
       `SELECT id, user_id, source_type, source_id, video_path, duration_sec
@@ -291,12 +336,15 @@ export async function processCaptioning(
     noKey = 0;
 
   for (const r of rows) {
+    const key = `${r.source_type}:${r.source_id}`;
+    if (renderKeysInFlight.has(key)) continue;
     const settings = readUserSettings(r.user_id);
     if (!isOpenAiKeyFormat(settings.openaiKey)) {
       noKey++;
       continue;
     }
     checked++;
+    renderKeysInFlight.add(key);
     try {
       const source = getSource(r.user_id, r.source_type, r.source_id);
       const { widthPx, heightPx } = dimsForFormat(source?.format ?? "reel");
@@ -349,49 +397,9 @@ export async function processCaptioning(
         );
       }
       errors++;
+    } finally {
+      renderKeysInFlight.delete(key);
     }
   }
   return { checked, completed, errors, noKey };
-}
-
-// Dispara la generación automática: todo guion (de noticias o adaptado de
-// competencia — comparten el mismo status 'aprobado' de status.ts) que acaba
-// de aprobarse y que todavía no tiene ningún render asociado. Se detiene en
-// cuanto el tope diario salta, dejando el resto para el próximo ciclo.
-export async function triggerApprovedScripts(userId: number): Promise<{ queued: number; capped: number }> {
-  const settings = readUserSettings(userId);
-  if (!settings.heygenKey || !settings.heygenAvatarId || !settings.heygenVoiceId) return { queued: 0, capped: 0 };
-
-  const pending: { type: SourceType; id: number }[] = [
-    ...(
-      db
-        .prepare(
-          `SELECT s.id FROM scripts s
-           LEFT JOIN heygen_renders hr ON hr.source_type = 'script' AND hr.source_id = s.id
-           WHERE s.user_id = ? AND s.status = 'aprobado' AND hr.id IS NULL`
-        )
-        .all(userId) as { id: number }[]
-    ).map((r) => ({ type: "script" as const, id: r.id })),
-    ...(
-      db
-        .prepare(
-          `SELECT cs.id FROM competitor_scripts cs
-           LEFT JOIN heygen_renders hr ON hr.source_type = 'competitor_script' AND hr.source_id = cs.id
-           WHERE cs.user_id = ? AND cs.status = 'aprobado' AND hr.id IS NULL`
-        )
-        .all(userId) as { id: number }[]
-    ).map((r) => ({ type: "competitor_script" as const, id: r.id })),
-  ];
-
-  let queued = 0,
-    capped = 0;
-  for (const { type, id } of pending) {
-    const r = await queueAvatarVideo(userId, type, id);
-    if (r.capped) {
-      capped++;
-      break; // tope alcanzado: el resto queda pendiente para el siguiente ciclo
-    }
-    if (r.ok) queued++;
-  }
-  return { queued, capped };
 }

@@ -37,6 +37,24 @@ export function heygenBudgetState(userId: number): HeygenBudgetState {
   };
 }
 
+// Coste ESTIMADO (heygen_renders.cost_usd guarda la estimación mientras el
+// render está en curso, y se sobrescribe con el coste real al completarse —
+// ver upsertRenderProcessing/markRenderDownloaded en heygen-generate.ts) de
+// los vídeos que YA se lanzaron a HeyGen pero todavía no han terminado.
+// heygenBudgetState() por sí solo solo ve gasto ya CONSOLIDADO (vídeos
+// completados) — sin sumar esto, lanzar varios vídeos seguidos (p.ej. desde
+// la selección múltiple) los deja a todos pasar el tope uno a uno, porque
+// ninguno de los anteriores habrá terminado todavía para descontar su coste.
+export function pendingHeygenCost(userId: number): number {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(cost_usd), 0) as total FROM heygen_renders
+       WHERE user_id = ? AND status IN ('processing', 'captioning')`
+    )
+    .get(userId) as { total: number };
+  return row.total;
+}
+
 export function recordHeygenUsage(userId: number, seconds: number, costUsd: number): void {
   const day = todayUTC();
   db.prepare(

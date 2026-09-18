@@ -40,12 +40,10 @@ function describeTranscription(trans: Awaited<ReturnType<typeof runCycle>>["tran
 }
 
 function describeHeygen(hg: Awaited<ReturnType<typeof runCycle>>["heygen"]): string {
-  if (hg.queued === 0 && hg.completed === 0 && hg.errors === 0 && hg.capped === 0) return "";
+  if (hg.completed === 0 && hg.errors === 0) return "";
   const parts = [];
-  if (hg.queued > 0) parts.push(`+${hg.queued} lanzados`);
   if (hg.completed > 0) parts.push(`${hg.completed} listos`);
   if (hg.errors > 0) parts.push(`${hg.errors} con error`);
-  if (hg.capped > 0) parts.push(`${hg.capped} en espera por tope`);
   return ` · heygen: ${parts.join(", ")}`;
 }
 

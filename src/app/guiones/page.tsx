@@ -10,6 +10,7 @@ import {
 } from "@/lib/status";
 import { buildScriptText } from "@/lib/scriptText";
 import { HeygenRenderStatus } from "@/components/HeygenRenderStatus";
+import { HeygenBulkBar } from "@/components/HeygenBulkBar";
 
 function scoreColor(s: number | null): string {
   if (s === null) return "bg-zinc-700 text-zinc-300";
@@ -100,7 +101,17 @@ function MetricsForm({ s, onSaved }: { s: ScriptItem; onSaved: () => void }) {
   );
 }
 
-function ScriptCard({ s, onChange }: { s: ScriptItem; onChange: () => void }) {
+function ScriptCard({
+  s,
+  onChange,
+  selected,
+  onToggleSelect,
+}: {
+  s: ScriptItem;
+  onChange: () => void;
+  selected: boolean;
+  onToggleSelect: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const eng = engagement(s);
 
@@ -114,18 +125,27 @@ function ScriptCard({ s, onChange }: { s: ScriptItem; onChange: () => void }) {
   }
 
   return (
-    <div className="rounded-lg border border-edge bg-panel p-3">
+    <div className={`rounded-lg border p-3 ${selected ? "border-brand bg-brand/10" : "border-edge bg-panel"}`}>
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="rounded bg-edge px-1.5 py-0.5 uppercase text-zinc-300">
-              {s.format === "reel" ? "IG/Reel" : "YouTube"}
-            </span>
-            {eng > 0 && <span className="text-emerald-400">🔥 {eng.toLocaleString()}</span>}
+        <div className="flex min-w-0 items-start gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            title="Seleccionar para generar vídeo con avatar en bloque"
+            className="mt-1 h-4 w-4 shrink-0 accent-brand"
+          />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="rounded bg-edge px-1.5 py-0.5 uppercase text-zinc-300">
+                {s.format === "reel" ? "IG/Reel" : "YouTube"}
+              </span>
+              {eng > 0 && <span className="text-emerald-400">🔥 {eng.toLocaleString()}</span>}
+            </div>
+            <h3 className="mt-1 truncate font-medium text-white" title={s.title ?? ""}>
+              {s.title || "(sin título)"}
+            </h3>
           </div>
-          <h3 className="mt-1 truncate font-medium text-white" title={s.title ?? ""}>
-            {s.title || "(sin título)"}
-          </h3>
         </div>
         <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold ${scoreColor(s.score)}`}>
           {s.score !== null ? s.score.toFixed(1) : "…"}
@@ -193,6 +213,16 @@ export default function GuionesPage() {
   const { data, loading, refresh } = usePoll<{ items: ScriptItem[] }>(`/api/scripts?limit=300`, 30000);
   const items = data?.items ?? [];
 
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  function toggleSelect(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const byStatus = (st: ScriptStatus) => items.filter((s) => s.status === st);
   const topItems = [...items]
     .filter((s) => engagement(s) > 0)
@@ -200,6 +230,12 @@ export default function GuionesPage() {
 
   return (
     <div>
+      <HeygenBulkBar
+        sourceType="script"
+        selectedIds={[...selected]}
+        onClear={() => setSelected(new Set())}
+        onDone={refresh}
+      />
       <div className="mb-4 flex items-center gap-2">
         <button
           onClick={() => setView("pipeline")}
@@ -244,7 +280,13 @@ export default function GuionesPage() {
                   </div>
                   <div className="space-y-2">
                     {col.map((s) => (
-                      <ScriptCard key={s.id} s={s} onChange={refresh} />
+                      <ScriptCard
+                        key={s.id}
+                        s={s}
+                        onChange={refresh}
+                        selected={selected.has(s.id)}
+                        onToggleSelect={() => toggleSelect(s.id)}
+                      />
                     ))}
                     {col.length === 0 && (
                       <div className="rounded border border-dashed border-edge p-3 text-center text-xs text-zinc-600">
@@ -261,7 +303,13 @@ export default function GuionesPage() {
       ) : (
         <div className="grid gap-3">
           {topItems.map((s) => (
-            <ScriptCard key={s.id} s={s} onChange={refresh} />
+            <ScriptCard
+              key={s.id}
+              s={s}
+              onChange={refresh}
+              selected={selected.has(s.id)}
+              onToggleSelect={() => toggleSelect(s.id)}
+            />
           ))}
           {topItems.length === 0 && (
             <p className="text-sm text-zinc-500">

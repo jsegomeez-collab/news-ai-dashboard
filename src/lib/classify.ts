@@ -138,7 +138,17 @@ function isDuplicateStory(userId: number, title: string): boolean {
   return recent.some((r) => jaccard(kw, storyKeywords(r.title)) >= 0.4);
 }
 
-async function classifyArticle(userId: number, apiKey: string, a: ArticleRow): Promise<boolean> {
+// Una clave inválida/revocada falla IGUAL para el artículo 1 que para el 60 —
+// sin esto, cada ciclo (cada 2h, para siempre hasta que alguien note el aviso
+// y la corrija en Ajustes) volvía a intentar los ~60 pendientes de este
+// usuario contra la misma clave rota, generando decenas de líneas de log
+// inútiles por nada.
+function isAuthError(e: unknown): boolean {
+  const msg = (e as Error)?.message ?? "";
+  return /authentication_error|invalid.*api.?key|api key is invalid/i.test(msg);
+}
+
+async function classifyArticle(userId: number, apiKey: string, a: ArticleRow): Promise<"ok" | "fail" | "auth-error"> {
   try {
     const msg = await client(apiKey).messages.create({
       model: env.modelClassify,
@@ -151,26 +161,40 @@ async function classifyArticle(userId: number, apiKey: string, a: ArticleRow): P
     const parsed = parseJsonFromText<ClassResult>(firstText(msg as never));
     if (parsed) {
       saveClassification(userId, a.id, a.title, parsed, env.modelClassify);
-      return true;
+      return "ok";
     }
   } catch (e) {
     console.warn(`[classify] u${userId} art ${a.id}:`, (e as Error).message);
+    if (isAuthError(e)) return "auth-error";
   }
-  return false;
+  return "fail";
 }
 
 // Clasifica en paralelo con concurrencia limitada (rápido pero sin saturar la API).
+// Si algún artículo revela que la clave es inválida, se deja de lanzar más
+// para el resto del lote (los que ya estaban en vuelo con la misma clave
+// rota igual fallan, pero no se arrancan más) — la próxima vez que corra el
+// ciclo lo reintentará solo, así que en cuanto se corrija la clave en
+// Ajustes, sigue funcionando sin tocar nada más.
 async function classifySync(userId: number, apiKey: string, articles: ArticleRow[]): Promise<number> {
   const CONCURRENCY = 6;
   let done = 0;
   let i = 0;
+  let authError = false;
   async function worker() {
-    while (i < articles.length) {
+    while (i < articles.length && !authError) {
       const a = articles[i++];
-      if (await classifyArticle(userId, apiKey, a)) done++;
+      const r = await classifyArticle(userId, apiKey, a);
+      if (r === "ok") done++;
+      else if (r === "auth-error") authError = true;
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, articles.length) }, worker));
+  if (authError) {
+    console.warn(
+      `[classify] u${userId}: clave de Anthropic inválida — se detiene el resto de este lote (revisa la clave en Ajustes)`
+    );
+  }
   return done;
 }
 

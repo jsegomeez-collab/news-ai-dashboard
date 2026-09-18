@@ -10,7 +10,7 @@ import { transcribePendingVideos, type TranscribeResult } from "./whisper";
 import { processAnalysingVideos } from "./competitor-generate";
 import { pruneStaleTranscribedVideos } from "./competitor";
 import { recordHeartbeat } from "./heartbeat";
-import { pollHeygenRenders, processCaptioning, triggerApprovedScripts } from "./heygen-generate";
+import { pollHeygenRenders, processCaptioning } from "./heygen-generate";
 import { publishPendingContentItems } from "./publish";
 
 // Usuarios que tienen una clave de Anthropic configurada.
@@ -89,30 +89,34 @@ async function classifyOne(userId: number, articleId: number): Promise<void> {
 
 // Ciclo para UN usuario (botón "Actualizar ahora"): fetch global + clasificar
 // y generar para este usuario. La generación respeta auto/ventana/topes.
+// El arranque de vídeos con avatar (HeyGen) NO va aquí — es manual y
+// deliberado, por guion, desde el botón/selección múltiple en /guiones y
+// /adaptados (ver queueAvatarVideo en heygen-generate.ts). Este botón solo
+// sondea/termina los que YA estén en marcha, nunca lanza uno nuevo.
 export async function runUserCycle(
   userId: number
-): Promise<{ ok: boolean; inserted: number; classified: number; generated: number; heygenQueued: number; error?: string }> {
+): Promise<{ ok: boolean; inserted: number; classified: number; generated: number; error?: string }> {
   try {
     const poll = await pollAllSources();
     await pollClassifyBatches(userId);
     const c = await classifyPending(userId);
     const g = await processGenQueue(userId);
-    await pollHeygenRenders(userId);
-    await processCaptioning(userId);
-    const hg = await triggerApprovedScripts(userId).catch((e) => {
+    await pollHeygenRenders(userId).catch((e) => {
       console.warn(`[cycle] u${userId} HeyGen:`, (e as Error).message);
-      return { queued: 0, capped: 0 };
+    });
+    await processCaptioning(userId).catch((e) => {
+      console.warn(`[cycle] u${userId} HeyGen (subtítulos):`, (e as Error).message);
     });
     await publishPendingContentItems(userId).catch((e) => {
       console.warn(`[cycle] u${userId} Metricool:`, (e as Error).message);
     });
-    return { ok: true, inserted: poll.inserted, classified: c.count, generated: g.generated, heygenQueued: hg.queued };
+    return { ok: true, inserted: poll.inserted, classified: c.count, generated: g.generated };
   } catch (e) {
-    return { ok: false, inserted: 0, classified: 0, generated: 0, heygenQueued: 0, error: (e as Error).message };
+    return { ok: false, inserted: 0, classified: 0, generated: 0, error: (e as Error).message };
   }
 }
 
-export type HeygenCycleResult = { checked: number; completed: number; errors: number; queued: number; capped: number };
+export type HeygenCycleResult = { checked: number; completed: number; errors: number };
 export type PublishCycleResult = { checked: number; scheduled: number; errors: number; noAccounts: number };
 
 export type CycleSummary = {
@@ -140,7 +144,7 @@ export async function runCycle(): Promise<CycleSummary> {
     generated: 0,
     competitor: null,
     transcribed: null,
-    heygen: { checked: 0, completed: 0, errors: 0, queued: 0, capped: 0 },
+    heygen: { checked: 0, completed: 0, errors: 0 },
     publish: { checked: 0, scheduled: 0, errors: 0, noAccounts: 0 },
   };
   // Si el descubrimiento de competencia entero revienta (accountsDue()/DB, no
@@ -225,10 +229,13 @@ export async function runCycle(): Promise<CycleSummary> {
     }
 
     // Fase 5: clonación con IA (HeyGen) — por usuario (mismo motivo que el
-    // análisis de competencia: no dejar que uno con muchos guiones aprobados
-    // acapare el ciclo y deje a los demás sin comprobar). Tres pasos en
-    // cadena por guion: descarga del mp4 de HeyGen -> subtítulos (Whisper +
-    // Remotion) -> lanzar los guiones recién aprobados que aún no tienen render.
+    // análisis de competencia: no dejar que uno con muchos renders en curso
+    // acapare el ciclo y deje a los demás sin comprobar). Dos pasos en cadena
+    // por guion: descarga del mp4 de HeyGen -> subtítulos (Whisper +
+    // Remotion). El arranque de un vídeo nuevo NUNCA es automático — solo lo
+    // dispara el usuario a mano (botón/selección múltiple en /guiones y
+    // /adaptados), justamente para no volver a lanzar de golpe más vídeos de
+    // los que el saldo de HeyGen puede pagar.
     for (const userId of users) {
       try {
         const p = await pollHeygenRenders(userId);
@@ -240,10 +247,6 @@ export async function runCycle(): Promise<CycleSummary> {
         base.heygen.completed += c.completed;
         base.heygen.errors += c.errors;
         if (c.errors > 0) heygenOk = false;
-
-        const t = await triggerApprovedScripts(userId);
-        base.heygen.queued += t.queued;
-        base.heygen.capped += t.capped;
       } catch (e) {
         console.warn(`[cycle] u${userId} HeyGen:`, (e as Error).message);
         heygenOk = false;

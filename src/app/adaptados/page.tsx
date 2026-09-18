@@ -11,6 +11,7 @@ import { DRIVE_STATUSES } from "@/lib/driveUi";
 import type { ContentItem } from "@/lib/contentItems";
 import { SCRIPT_STATUSES, STATUS_LABEL } from "@/lib/status";
 import { HeygenRenderStatus } from "@/components/HeygenRenderStatus";
+import { HeygenBulkBar } from "@/components/HeygenBulkBar";
 
 const PAGE_SIZE = 20;
 
@@ -460,7 +461,7 @@ export default function AdaptadosPage() {
   if (formatFilter) params.set("format", formatFilter);
   if (statusFilter) params.set("status", statusFilter);
 
-  const { data, loading } = usePoll<{ scripts: CompetitorScriptItem[]; total: number; pages: number }>(
+  const { data, loading, refresh } = usePoll<{ scripts: CompetitorScriptItem[]; total: number; pages: number }>(
     `/api/competitors/scripts?${params.toString()}`,
     20000
   );
@@ -531,6 +532,13 @@ export default function AdaptadosPage() {
           </button>
         </div>
       )}
+
+      <HeygenBulkBar
+        sourceType="competitor_script"
+        selectedIds={selected}
+        onClear={() => setSelected([])}
+        onDone={refresh}
+      />
 
       {scripts.length === 0 ? (
         <div className="rounded-lg border border-dashed border-edge p-10 text-center text-zinc-500">

@@ -158,7 +158,14 @@ export async function getVideoStatus(apiKey: string, videoId: string): Promise<H
     status: string;
     video_url?: string;
     duration?: number;
-    error?: { message?: string } | string | null;
+    // El esquema real de /v3/videos/{id} (confirmado contra el CLI oficial de
+    // HeyGen, generado desde su spec) no trae ningún campo "error": el motivo
+    // de un fallo viaja en failure_message/failure_code. Un campo "error" aquí
+    // era un supuesto sin verificar de una versión anterior — con él, un
+    // render fallido nunca mostraba el motivo real (p.ej. "sin créditos"),
+    // solo el genérico "HeyGen devolvió 'failed'".
+    failure_message?: string | null;
+    failure_code?: string | null;
   }>(apiKey, `/v3/videos/${encodeURIComponent(videoId)}`);
   const status: HeygenVideoStatus["status"] =
     json.status === "completed" || json.status === "failed" || json.status === "pending" ? json.status : "processing";
@@ -166,7 +173,7 @@ export async function getVideoStatus(apiKey: string, videoId: string): Promise<H
     status,
     videoUrl: json.video_url ?? null,
     durationSec: typeof json.duration === "number" ? json.duration : null,
-    error: typeof json.error === "string" ? json.error : json.error?.message ?? null,
+    error: json.failure_message ?? json.failure_code ?? null,
   };
 }
 
