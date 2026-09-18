@@ -181,8 +181,18 @@ export default function AjustesPage() {
     setHeygenLoadError(null);
     const res = await fetch("/api/heygen/avatars", { cache: "no-store" });
     const json = (await res.json()) as { avatars?: HeygenAvatarOption[]; error?: string };
-    if (json.error) setHeygenLoadError(json.error);
-    else setHeygenAvatars(json.avatars ?? []);
+    if (json.error) {
+      setHeygenLoadError(json.error);
+    } else {
+      const avatars = json.avatars ?? [];
+      setHeygenAvatars(avatars);
+      // Si el avatar ya estaba elegido de antes (p.ej. de una carga previa
+      // sin voz), el <select> no dispara onChange al recargar la lista —
+      // para el navegador no "cambia" nada si ya tenía ese valor. Sin esto,
+      // la voz autorrellenada solo llegaba si volvías a tocar el desplegable.
+      const current = avatars.find((a) => a.id === s?.heygenAvatarId);
+      if (current) pickHeygenAvatar(current);
+    }
     setLoadingHeygen(null);
   }
   async function loadHeygenVoices() {
