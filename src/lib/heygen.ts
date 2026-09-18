@@ -90,6 +90,27 @@ export async function listAvatars(apiKey: string): Promise<HeygenAvatarOption[]>
 // defaultVoiceId, ver listAvatars), así que no hace falta listar ni elegir
 // voces sueltas — eso solo añadiría un desplegable redundante y una vía por
 // la que el guion podría acabar leído con una voz que no es la del clon.
+// Red de seguridad: busca a qué grupo pertenece un avatar_id (look) concreto
+// y devuelve la voz por defecto de ese grupo. Hace falta para cuentas que
+// eligieron su avatar ANTES de que existiera el autorrelleno de voz en
+// Ajustes (o si Ajustes se quedó desincronizado por lo que sea) — sin esto,
+// heygen_voice_id se queda vacío para siempre y queueAvatarVideo() nunca
+// llega a llamar a HeyGen de verdad.
+export async function findDefaultVoiceForAvatar(apiKey: string, avatarId: string): Promise<string | null> {
+  const groups = await heygenFetch<RawAvatarGroup[]>(apiKey, "/v3/avatars?ownership=private").catch(
+    () => [] as RawAvatarGroup[]
+  );
+  for (const g of groups) {
+    if (g.id === avatarId) return g.default_voice_id ?? null;
+    if (!g.default_voice_id) continue;
+    const looks = await heygenFetch<RawLook[]>(apiKey, `/v3/avatars/looks?group_id=${encodeURIComponent(g.id)}`).catch(
+      () => [] as RawLook[]
+    );
+    if (looks.some((l) => l.id === avatarId)) return g.default_voice_id;
+  }
+  return null;
+}
+
 type RawVoice = { voice_id: string; name?: string; language?: string };
 
 // Nombre de una voz concreta por su id — se usa para etiquetar bien la voz

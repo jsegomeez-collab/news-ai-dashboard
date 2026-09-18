@@ -1,10 +1,16 @@
 import { existsSync, statSync } from "node:fs";
 import { db } from "./db";
-import { readUserSettings } from "./settings";
+import { readUserSettings, writeUserSettings } from "./settings";
 import { buildScriptText } from "./scriptText";
 import { saveBuffer, newUploadPath, deleteUploadIfExists } from "./uploads";
 import { heygenBudgetState, recordHeygenUsage } from "./heygenUsage";
-import { createAvatarVideo, getVideoStatus, estimateCostFromText, HEYGEN_PRICE_PER_SEC } from "./heygen";
+import {
+  createAvatarVideo,
+  getVideoStatus,
+  estimateCostFromText,
+  findDefaultVoiceForAvatar,
+  HEYGEN_PRICE_PER_SEC,
+} from "./heygen";
 import { isOpenAiKeyFormat } from "./whisper";
 import { transcribeWithWordTimestamps } from "./captions";
 import { createTikTokStyleCaptions } from "@remotion/captions";
@@ -122,8 +128,22 @@ export async function queueAvatarVideo(
   }
 
   const settings = readUserSettings(userId);
-  if (!settings.heygenKey || !settings.heygenAvatarId || !settings.heygenVoiceId) {
-    return { ok: false, error: "Configura tu clave, avatar y voz de HeyGen en Ajustes." };
+  if (!settings.heygenKey || !settings.heygenAvatarId) {
+    return { ok: false, error: "Configura tu clave y avatar de HeyGen en Ajustes." };
+  }
+
+  // Autocuración: cuentas que eligieron su avatar ANTES de que existiera el
+  // autorrelleno de voz (o que se quedaron desincronizadas por lo que sea) se
+  // quedaban con heygen_voice_id vacío para siempre — bloqueando esta función
+  // sin que ninguna llamada real llegase nunca a HeyGen. Se resuelve aquí, en
+  // el momento de generar, y se guarda para que la próxima vez ya esté listo.
+  let voiceId = settings.heygenVoiceId;
+  if (!voiceId) {
+    voiceId = (await findDefaultVoiceForAvatar(settings.heygenKey, settings.heygenAvatarId).catch(() => null)) ?? "";
+    if (voiceId) writeUserSettings(userId, { heygenVoiceId: voiceId, heygenVoiceLabel: "Voz de tu clon" });
+  }
+  if (!voiceId) {
+    return { ok: false, error: "No se pudo determinar la voz de tu avatar — vuelve a elegirlo en Ajustes." };
   }
 
   const source = getSource(userId, type, id);
@@ -143,7 +163,7 @@ export async function queueAvatarVideo(
   try {
     const videoId = await createAvatarVideo(settings.heygenKey, {
       avatarId: settings.heygenAvatarId,
-      voiceId: settings.heygenVoiceId,
+      voiceId,
       text,
     });
     upsertRenderProcessing(userId, type, id, videoId);
