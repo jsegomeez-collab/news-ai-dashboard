@@ -28,6 +28,11 @@ export type UserSettings = {
   // calendario — ver autoSchedule.ts.
   postingWindowStartHour: number;
   postingWindowEndHour: number;
+  // Metricool: token fijo de tu cuenta (API REST, no su MCP — igual que
+  // HeyGen: el MCP es para agentes conversacionales, no para este worker) +
+  // el userId que la API exige junto al token en cada llamada.
+  metricoolUserToken: string;
+  metricoolUserId: string;
 };
 
 // Versión de UserSettings segura para mandar al navegador: las claves reales
@@ -36,21 +41,26 @@ export type UserSettings = {
 // type="password", devolverlas en el JSON las deja visibles en la pestaña
 // Red y en React DevTools sin que haga falta ni un XSS. Solo se manda si
 // cada una está configurada (booleano) — cero bytes del valor real.
-export type SafeUserSettings = Omit<UserSettings, "anthropicKey" | "openaiKey" | "apifyToken" | "heygenKey"> & {
+export type SafeUserSettings = Omit<
+  UserSettings,
+  "anthropicKey" | "openaiKey" | "apifyToken" | "heygenKey" | "metricoolUserToken"
+> & {
   hasAnthropicKey: boolean;
   hasOpenaiKey: boolean;
   hasApifyToken: boolean;
   hasHeygenKey: boolean;
+  hasMetricoolToken: boolean;
 };
 
 export function toSafeSettings(s: UserSettings): SafeUserSettings {
-  const { anthropicKey, openaiKey, apifyToken, heygenKey, ...rest } = s;
+  const { anthropicKey, openaiKey, apifyToken, heygenKey, metricoolUserToken, ...rest } = s;
   return {
     ...rest,
     hasAnthropicKey: anthropicKey.startsWith("sk-ant-"),
     hasOpenaiKey: !!openaiKey,
     hasApifyToken: !!apifyToken,
     hasHeygenKey: !!heygenKey,
+    hasMetricoolToken: !!metricoolUserToken,
   };
 }
 
@@ -76,6 +86,8 @@ type Row = {
   heygen_daily_usd_cap: number;
   posting_window_start_hour: number;
   posting_window_end_hour: number;
+  metricool_user_token: string;
+  metricool_user_id: string;
 };
 
 function ensure(userId: number): void {
@@ -112,6 +124,8 @@ export function readUserSettings(userId: number): UserSettings {
     heygenDailyUsdCap: r.heygen_daily_usd_cap,
     postingWindowStartHour: r.posting_window_start_hour,
     postingWindowEndHour: r.posting_window_end_hour,
+    metricoolUserToken: r.metricool_user_token ?? "",
+    metricoolUserId: r.metricool_user_id ?? "",
   };
 }
 
@@ -139,6 +153,8 @@ export function writeUserSettings(userId: number, p: Partial<UserSettings>): Use
     ["heygenDailyUsdCap", "heygen_daily_usd_cap", (v) => Math.max(0, Number(v) || 0)],
     ["postingWindowStartHour", "posting_window_start_hour", (v) => clampInt(v, 0, 23)],
     ["postingWindowEndHour", "posting_window_end_hour", (v) => clampInt(v, 1, 24)],
+    ["metricoolUserToken", "metricool_user_token", (v) => String(v ?? "").trim()],
+    ["metricoolUserId", "metricool_user_id", (v) => String(v ?? "").trim()],
   ];
   for (const [key, col, fn] of map) {
     if (p[key] !== undefined) {

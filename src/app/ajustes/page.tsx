@@ -24,7 +24,17 @@ type Settings = {
   heygenDailyUsdCap: number;
   postingWindowStartHour: number;
   postingWindowEndHour: number;
+  hasMetricoolToken: boolean;
+  metricoolUserId: string;
 };
+type PublishAccount = {
+  id: number;
+  blog_id: string;
+  label: string;
+  network: "instagram" | "tiktok" | "youtube";
+  active: number;
+};
+type MetricoolBlog = { id: number; label: string; title: string | null; instagram: string | null; tiktok: string | null; youtube: string | null };
 type ModelOption = { id: string; label: string };
 type Status = {
   hasKey: boolean;
@@ -66,6 +76,16 @@ export default function AjustesPage() {
   const [heygenVoices, setHeygenVoices] = useState<HeygenVoiceOption[] | null>(null);
   const [heygenLoadError, setHeygenLoadError] = useState<string | null>(null);
   const [loadingHeygen, setLoadingHeygen] = useState<"avatars" | "voices" | null>(null);
+  const [mcTokenInput, setMcTokenInput] = useState("");
+  const [mcUserIdInput, setMcUserIdInput] = useState("");
+  const [savedMcToken, setSavedMcToken] = useState(false);
+  const [mcBlogs, setMcBlogs] = useState<MetricoolBlog[] | null>(null);
+  const [mcLoadError, setMcLoadError] = useState<string | null>(null);
+  const [loadingBlogs, setLoadingBlogs] = useState(false);
+  const [accounts, setAccounts] = useState<PublishAccount[]>([]);
+  const [newBlogId, setNewBlogId] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [newNetwork, setNewNetwork] = useState<"instagram" | "tiktok" | "youtube">("instagram");
   const { data: status } = usePoll<Status>("/api/status", 15000);
 
   async function load() {
@@ -77,8 +97,14 @@ export default function AjustesPage() {
     // arrancan vacíos siempre; escribir algo y guardar es la única forma de
     // cambiarlas, nunca se precargan con el valor real.
   }
+  async function loadAccounts() {
+    const res = await fetch("/api/publish-accounts", { cache: "no-store" });
+    const json = (await res.json()) as { accounts: PublishAccount[] };
+    setAccounts(json.accounts ?? []);
+  }
   useEffect(() => {
     load();
+    loadAccounts();
   }, []);
 
   async function patch(p: Partial<Settings>) {
@@ -167,6 +193,60 @@ export default function AjustesPage() {
   }
   function pickHeygenVoice(v: HeygenVoiceOption) {
     patch({ heygenVoiceId: v.id, heygenVoiceLabel: v.label });
+  }
+
+  // El userId de Metricool no es secreto (solo el token lo es), así que viaja
+  // normal dentro de Settings — pero se guarda junto al token en el mismo
+  // guardado para no obligar a dos pasos separados.
+  async function saveMetricool() {
+    const body: Record<string, unknown> = { metricoolUserId: mcUserIdInput || s?.metricoolUserId };
+    if (mcTokenInput) body.metricoolUserToken = mcTokenInput;
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = (await res.json()) as { settings: Settings };
+    setS(json.settings);
+    setMcTokenInput("");
+    setSavedMcToken(true);
+    setTimeout(() => setSavedMcToken(false), 1500);
+  }
+
+  async function loadBlogs() {
+    setLoadingBlogs(true);
+    setMcLoadError(null);
+    const res = await fetch("/api/metricool/blogs", { cache: "no-store" });
+    const json = (await res.json()) as { blogs?: MetricoolBlog[]; error?: string };
+    if (json.error) setMcLoadError(json.error);
+    else setMcBlogs(json.blogs ?? []);
+    setLoadingBlogs(false);
+  }
+
+  async function addAccount() {
+    if (!newBlogId.trim() || !newLabel.trim()) return;
+    await fetch("/api/publish-accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blogId: newBlogId, label: newLabel, network: newNetwork }),
+    });
+    setNewBlogId("");
+    setNewLabel("");
+    loadAccounts();
+  }
+
+  async function toggleAccountActive(a: PublishAccount) {
+    await fetch(`/api/publish-accounts/${a.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: !a.active }),
+    });
+    loadAccounts();
+  }
+
+  async function removeAccount(id: number) {
+    await fetch(`/api/publish-accounts/${id}`, { method: "DELETE" });
+    loadAccounts();
   }
 
   if (!s) return <p className="text-sm text-zinc-500">Cargando…</p>;
@@ -499,6 +579,99 @@ export default function AjustesPage() {
             />
           </label>
         </div>
+      </Card>
+
+      <Card title={`🚀 Metricool (publicar) ${savedMcToken ? "· guardado ✓" : s.hasMetricoolToken ? "· configurado ✓" : ""}`}>
+        <p className="mb-2 text-sm text-zinc-400">
+          Cuando un vídeo queda listo y programado en el Calendario, se sube y programa solo en
+          cada cuenta destino que actives abajo — Metricool publica a la hora exacta. Consigue tu
+          token en{" "}
+          <a href="https://app.metricool.com/settings/api" target="_blank" rel="noreferrer" className="text-brand hover:underline">
+            app.metricool.com (Ajustes → API)
+          </a>{" "}
+          y tu userId en la URL de tu panel.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            type="password"
+            value={mcTokenInput}
+            onChange={(e) => setMcTokenInput(e.target.value)}
+            placeholder={s.hasMetricoolToken ? "•••••••••••• (escribe para cambiarlo)" : "tu userToken"}
+            className="rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand"
+          />
+          <input
+            value={mcUserIdInput}
+            onChange={(e) => setMcUserIdInput(e.target.value)}
+            placeholder={s.metricoolUserId ? `userId: ${s.metricoolUserId}` : "tu userId"}
+            className="rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand"
+          />
+        </div>
+        <button onClick={saveMetricool} className="mt-2 rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white">
+          Guardar
+        </button>
+
+        {s.hasMetricoolToken && (
+          <div className="mt-4 space-y-3 border-t border-edge/50 pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-300">Cuentas destino</span>
+              <button onClick={loadBlogs} disabled={loadingBlogs} className="text-xs text-brand hover:underline disabled:opacity-50">
+                {loadingBlogs ? "Cargando…" : "Cargar mis cuentas de Metricool"}
+              </button>
+            </div>
+            {mcLoadError && <p className="text-xs text-red-400">{mcLoadError}</p>}
+            {mcBlogs && (
+              <p className="text-xs text-zinc-500">
+                {mcBlogs.map((b) => `#${b.id} ${b.label}`).join(" · ") || "Sin marcas en tu cuenta de Metricool."}
+              </p>
+            )}
+
+            <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2">
+              <input
+                value={newBlogId}
+                onChange={(e) => setNewBlogId(e.target.value)}
+                placeholder="blogId (nº)"
+                className="rounded border border-edge bg-ink p-2 text-xs text-zinc-200"
+              />
+              <input
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                placeholder="Etiqueta (p.ej. Cliente A)"
+                className="rounded border border-edge bg-ink p-2 text-xs text-zinc-200"
+              />
+              <select
+                value={newNetwork}
+                onChange={(e) => setNewNetwork(e.target.value as typeof newNetwork)}
+                className="rounded border border-edge bg-ink p-2 text-xs text-zinc-200"
+              >
+                <option value="instagram">Instagram</option>
+                <option value="tiktok">TikTok</option>
+                <option value="youtube">YouTube</option>
+              </select>
+              <button onClick={addAccount} className="rounded bg-brand px-3 text-xs font-semibold text-white">
+                Añadir
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              {accounts.map((a) => (
+                <div key={a.id} className="flex items-center justify-between rounded bg-ink/60 px-2.5 py-1.5 text-sm">
+                  <span className={a.active ? "text-zinc-200" : "text-zinc-600 line-through"}>
+                    {a.label} <span className="text-xs text-zinc-500">({a.network} · #{a.blog_id})</span>
+                  </span>
+                  <span className="flex gap-2">
+                    <button onClick={() => toggleAccountActive(a)} className="text-xs text-brand hover:underline">
+                      {a.active ? "pausar" : "activar"}
+                    </button>
+                    <button onClick={() => removeAccount(a.id)} className="text-xs text-red-400 hover:underline">
+                      quitar
+                    </button>
+                  </span>
+                </div>
+              ))}
+              {accounts.length === 0 && <p className="text-xs text-zinc-600">Sin cuentas destino todavía.</p>}
+            </div>
+          </div>
+        )}
       </Card>
 
       <Card title="🕵️ Espionaje de competencia">

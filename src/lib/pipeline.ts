@@ -11,6 +11,7 @@ import { processAnalysingVideos } from "./competitor-generate";
 import { pruneStaleTranscribedVideos } from "./competitor";
 import { recordHeartbeat } from "./heartbeat";
 import { pollHeygenRenders, processCaptioning, triggerApprovedScripts } from "./heygen-generate";
+import { publishPendingContentItems } from "./publish";
 
 // Usuarios que tienen una clave de Anthropic configurada.
 export function activeUserIds(): number[] {
@@ -102,6 +103,9 @@ export async function runUserCycle(
       console.warn(`[cycle] u${userId} HeyGen:`, (e as Error).message);
       return { queued: 0, capped: 0 };
     });
+    await publishPendingContentItems(userId).catch((e) => {
+      console.warn(`[cycle] u${userId} Metricool:`, (e as Error).message);
+    });
     return { ok: true, inserted: poll.inserted, classified: c.count, generated: g.generated, heygenQueued: hg.queued };
   } catch (e) {
     return { ok: false, inserted: 0, classified: 0, generated: 0, heygenQueued: 0, error: (e as Error).message };
@@ -109,6 +113,7 @@ export async function runUserCycle(
 }
 
 export type HeygenCycleResult = { checked: number; completed: number; errors: number; queued: number; capped: number };
+export type PublishCycleResult = { checked: number; scheduled: number; errors: number; noAccounts: number };
 
 export type CycleSummary = {
   ok: boolean;
@@ -121,6 +126,7 @@ export type CycleSummary = {
   competitor: CompetitorPollResult | null;
   transcribed: TranscribeResult | null;
   heygen: HeygenCycleResult;
+  publish: PublishCycleResult;
 };
 
 // Un ciclo completo: fetch GLOBAL + competencia (descubrimiento + transcripción) + por usuario (clasificar/generar).
@@ -135,6 +141,7 @@ export async function runCycle(): Promise<CycleSummary> {
     competitor: null,
     transcribed: null,
     heygen: { checked: 0, completed: 0, errors: 0, queued: 0, capped: 0 },
+    publish: { checked: 0, scheduled: 0, errors: 0, noAccounts: 0 },
   };
   // Si el descubrimiento de competencia entero revienta (accountsDue()/DB, no
   // un fallo por-cuenta que ya se traga internamente), lo marcamos aparte:
@@ -142,6 +149,7 @@ export async function runCycle(): Promise<CycleSummary> {
   // bien y ocultar por completo que la mitad "espionaje" está caída.
   let competitorOk = true;
   let heygenOk = true;
+  let publishOk = true;
   try {
     // Fase 1: noticias + descubrimiento de competencia en paralelo.
     const [poll, competitor] = await Promise.all([
@@ -242,6 +250,23 @@ export async function runCycle(): Promise<CycleSummary> {
       }
     }
 
+    // Fase 6: Metricool — programa (con antelación, autoPublish deja el
+    // momento exacto en sus manos) todo lo que ya esté 'por_subir' con vídeo
+    // adjunto y todavía no se haya intentado con alguna cuenta destino activa.
+    for (const userId of users) {
+      try {
+        const p = await publishPendingContentItems(userId);
+        base.publish.checked += p.checked;
+        base.publish.scheduled += p.scheduled;
+        base.publish.errors += p.errors;
+        base.publish.noAccounts += p.noAccounts;
+        if (p.errors > 0) publishOk = false;
+      } catch (e) {
+        console.warn(`[cycle] u${userId} Metricool:`, (e as Error).message);
+        publishOk = false;
+      }
+    }
+
     recordHeartbeat({
       ok: true,
       fetched: base.fetched,
@@ -257,6 +282,10 @@ export async function runCycle(): Promise<CycleSummary> {
       heygenChecked: base.heygen.checked,
       heygenCompleted: base.heygen.completed,
       heygenErrors: base.heygen.errors,
+      publishOk,
+      publishChecked: base.publish.checked,
+      publishScheduled: base.publish.scheduled,
+      publishErrors: base.publish.errors,
     });
     return base;
   } catch (e) {
@@ -277,6 +306,10 @@ export async function runCycle(): Promise<CycleSummary> {
       heygenChecked: failed.heygen.checked,
       heygenCompleted: failed.heygen.completed,
       heygenErrors: failed.heygen.errors,
+      publishOk,
+      publishChecked: failed.publish.checked,
+      publishScheduled: failed.publish.scheduled,
+      publishErrors: failed.publish.errors,
     });
     return failed;
   }

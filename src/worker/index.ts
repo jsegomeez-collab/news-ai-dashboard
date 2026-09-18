@@ -49,6 +49,14 @@ function describeHeygen(hg: Awaited<ReturnType<typeof runCycle>>["heygen"]): str
   return ` · heygen: ${parts.join(", ")}`;
 }
 
+function describePublish(p: Awaited<ReturnType<typeof runCycle>>["publish"]): string {
+  if (p.scheduled === 0 && p.errors === 0) return "";
+  const parts = [];
+  if (p.scheduled > 0) parts.push(`${p.scheduled} programados`);
+  if (p.errors > 0) parts.push(`${p.errors} con error`);
+  return ` · metricool: ${parts.join(", ")}`;
+}
+
 async function cycle(): Promise<void> {
   console.log(`\n[${ts()}] ▶ ciclo iniciado`);
   const r = await runCycle();
@@ -57,7 +65,7 @@ async function cycle(): Promise<void> {
   console.log(
     `[${ts()}] ✔ noticias: ${r.inserted}/${r.fetched} · ` +
       `u${r.users} · clasif: ${r.classified} · guiones: ${r.generated}` +
-      `${describeCompetitor(r.competitor)}${describeTranscription(r.transcribed)}${describeHeygen(r.heygen)}`
+      `${describeCompetitor(r.competitor)}${describeTranscription(r.transcribed)}${describeHeygen(r.heygen)}${describePublish(r.publish)}`
   );
 }
 

@@ -498,6 +498,12 @@ CREATE TABLE IF NOT EXISTS heygen_usage_log (
     ["heygen_checked", "INTEGER NOT NULL DEFAULT 0"],
     ["heygen_completed", "INTEGER NOT NULL DEFAULT 0"],
     ["heygen_errors", "INTEGER NOT NULL DEFAULT 0"],
+    // Mismo motivo: si Metricool falla (token revocado, blogId borrado...) no
+    // debe esconderse bajo la salud de HeyGen — son dos proveedores distintos.
+    ["publish_ok", "INTEGER NOT NULL DEFAULT 1"],
+    ["publish_checked", "INTEGER NOT NULL DEFAULT 0"],
+    ["publish_scheduled", "INTEGER NOT NULL DEFAULT 0"],
+    ["publish_errors", "INTEGER NOT NULL DEFAULT 0"],
   ] as const) {
     if (!hcols.some((c) => c.name === col)) {
       r.exec(`ALTER TABLE worker_heartbeat ADD COLUMN ${col} ${def}`);
@@ -537,5 +543,51 @@ CREATE TABLE IF NOT EXISTS heygen_usage_log (
     r.exec(`ALTER TABLE content_items ADD COLUMN scheduled_time TEXT`);
     console.log("[db] columna scheduled_time añadida a content_items");
   }
+
+  // Metricool: token fijo de tu cuenta (uno solo, como el resto de claves) +
+  // el userId de esa cuenta (lo exige la API en cada llamada junto al token).
+  for (const [col, def] of [
+    ["metricool_user_token", "TEXT NOT NULL DEFAULT ''"],
+    ["metricool_user_id", "TEXT NOT NULL DEFAULT ''"],
+  ] as const) {
+    if (!cols.some((c) => c.name === col)) {
+      r.exec(`ALTER TABLE user_settings ADD COLUMN ${col} ${def}`);
+      console.log(`[db] columna ${col} añadida a user_settings`);
+    }
+  }
+
+  r.exec(`
+-- ===== METRICOOL: publicar el mismo vídeo en varias cuentas destino =====
+-- Una fila por cuenta de cliente conectada en tu panel de Metricool (un
+-- blogId). "Misma marca, varias cuentas destino" (confirmado con el
+-- usuario) — no hay concepto de "cliente" aquí, solo dónde se publica.
+CREATE TABLE IF NOT EXISTS publish_accounts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blog_id     TEXT NOT NULL,
+  label       TEXT NOT NULL,
+  network     TEXT NOT NULL, -- 'instagram' | 'tiktok' | 'youtube'
+  active      INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL,
+  UNIQUE(user_id, blog_id, network)
+);
+CREATE INDEX IF NOT EXISTS idx_publish_accounts_user ON publish_accounts(user_id);
+
+-- Una fila por combinación (content_item x cuenta destino): el mismo vídeo
+-- puede salir bien en una cuenta y fallar en otra, así que el resultado se
+-- guarda por separado en vez de un único estado en content_items.
+CREATE TABLE IF NOT EXISTS content_item_publications (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  content_item_id     INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+  publish_account_id  INTEGER NOT NULL REFERENCES publish_accounts(id) ON DELETE CASCADE,
+  metricool_post_id   TEXT,
+  status              TEXT NOT NULL DEFAULT 'pending', -- pending|scheduled|error
+  error_msg           TEXT,
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL,
+  UNIQUE(content_item_id, publish_account_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cip_content_item ON content_item_publications(content_item_id);
+`);
 }
 
