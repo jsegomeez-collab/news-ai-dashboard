@@ -11,6 +11,7 @@ import {
 import { buildScriptText } from "@/lib/scriptText";
 import { HeygenRenderStatus } from "@/components/HeygenRenderStatus";
 import { HeygenBulkBar } from "@/components/HeygenBulkBar";
+import { HeygenProcessButton } from "@/components/HeygenProcessButton";
 
 function scoreColor(s: number | null): string {
   if (s === null) return "bg-zinc-700 text-zinc-300";
@@ -230,6 +231,7 @@ export default function GuionesPage() {
 
   return (
     <div>
+      <HeygenProcessButton />
       <HeygenBulkBar
         sourceType="script"
         selectedIds={[...selected]}

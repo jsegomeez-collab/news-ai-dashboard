@@ -11,7 +11,10 @@ type Render = {
 
 const STATUS_TEXT: Record<string, string> = {
   processing: "🎬 Generando el avatar con HeyGen…",
-  captioning: "✍️ Añadiendo subtítulos y título (Whisper + Remotion)…",
+  // Ya no se edita solo por tener esta pantalla abierta — falta el "Proceso
+  // 2" (botón "▶ Continuar proceso de vídeos" en la parte de arriba de la
+  // página) para que se le añadan subtítulos y se publique.
+  captioning: "✅ HeyGen ya lo generó — pulsa \"Continuar proceso de vídeos\" arriba para editarlo y publicarlo.",
 };
 
 // Estado del vídeo con avatar de un guion (script o adaptado de competencia),

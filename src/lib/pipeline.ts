@@ -13,6 +13,12 @@ import { recordHeartbeat } from "./heartbeat";
 import { pollHeygenRenders, processCaptioning } from "./heygen-generate";
 import { publishPendingContentItems } from "./publish";
 
+// Cuántos vídeos pasa por Remotion (Chromium+ffmpeg, CPU-intensivo) por
+// ciclo/click — ver el comentario en processCaptioning(). Deliberadamente
+// bajo: prioriza que la web nunca se quede sin CPU sobre vaciar rápido un
+// backlog acumulado (p.ej. tras un rato con el worker caído).
+const CAPTION_BATCH = 1;
+
 // Usuarios que tienen una clave de Anthropic configurada.
 export function activeUserIds(): number[] {
   return (
@@ -87,12 +93,11 @@ async function classifyOne(userId: number, articleId: number): Promise<void> {
   await classifyPending(userId);
 }
 
-// Ciclo para UN usuario (botón "Actualizar ahora"): fetch global + clasificar
-// y generar para este usuario. La generación respeta auto/ventana/topes.
-// El arranque de vídeos con avatar (HeyGen) NO va aquí — es manual y
-// deliberado, por guion, desde el botón/selección múltiple en /guiones y
-// /adaptados (ver queueAvatarVideo en heygen-generate.ts). Este botón solo
-// sondea/termina los que YA estén en marcha, nunca lanza uno nuevo.
+// Ciclo para UN usuario (botón "Actualizar ahora"): SOLO noticias + clasificar
+// + generar guiones para este usuario. Nada de HeyGen ni Metricool aquí a
+// propósito (ver runVideoPipelineForUser más abajo) — este botón es "el
+// ciclo natural" (noticias -> guiones), el vídeo/edición/publicación es un
+// proceso aparte que el usuario dispara explícitamente cuando quiere.
 export async function runUserCycle(
   userId: number
 ): Promise<{ ok: boolean; inserted: number; classified: number; generated: number; error?: string }> {
@@ -101,18 +106,37 @@ export async function runUserCycle(
     await pollClassifyBatches(userId);
     const c = await classifyPending(userId);
     const g = await processGenQueue(userId);
-    await pollHeygenRenders(userId).catch((e) => {
-      console.warn(`[cycle] u${userId} HeyGen:`, (e as Error).message);
-    });
-    await processCaptioning(userId).catch((e) => {
-      console.warn(`[cycle] u${userId} HeyGen (subtítulos):`, (e as Error).message);
-    });
-    await publishPendingContentItems(userId).catch((e) => {
-      console.warn(`[cycle] u${userId} Metricool:`, (e as Error).message);
-    });
     return { ok: true, inserted: poll.inserted, classified: c.count, generated: g.generated };
   } catch (e) {
     return { ok: false, inserted: 0, classified: 0, generated: 0, error: (e as Error).message };
+  }
+}
+
+// "Proceso 2": todo lo que viene DESPUÉS de arrancar un vídeo con avatar —
+// comprobar si HeyGen ya lo terminó, editarlo (Whisper + Remotion, la parte
+// que consume CPU a tope) y publicarlo en Metricool. A propósito NO forma
+// parte del ciclo automático del worker ni de "Actualizar ahora": el usuario
+// ya aprobó explícitamente arrancar CADA vídeo (botón/selección múltiple en
+// /guiones y /adaptados) y aquí vuelve a aprobar explícitamente que se siga
+// con la edición/publicación, pulsando este botón — así el renderizado
+// pesado nunca compite por CPU con el ciclo de noticias/guiones sin que el
+// usuario lo haya decidido en ese momento.
+export async function runVideoPipelineForUser(
+  userId: number
+): Promise<{ ok: boolean; checked: number; completed: number; errors: number; published: number; error?: string }> {
+  try {
+    const p = await pollHeygenRenders(userId);
+    const c = await processCaptioning(userId, undefined, CAPTION_BATCH);
+    const pub = await publishPendingContentItems(userId);
+    return {
+      ok: true,
+      checked: p.checked + c.checked,
+      completed: c.completed,
+      errors: p.errors + c.errors + pub.errors,
+      published: pub.scheduled,
+    };
+  } catch (e) {
+    return { ok: false, checked: 0, completed: 0, errors: 0, published: 0, error: (e as Error).message };
   }
 }
 
@@ -228,47 +252,13 @@ export async function runCycle(): Promise<CycleSummary> {
       }
     }
 
-    // Fase 5: clonación con IA (HeyGen) — por usuario (mismo motivo que el
-    // análisis de competencia: no dejar que uno con muchos renders en curso
-    // acapare el ciclo y deje a los demás sin comprobar). Dos pasos en cadena
-    // por guion: descarga del mp4 de HeyGen -> subtítulos (Whisper +
-    // Remotion). El arranque de un vídeo nuevo NUNCA es automático — solo lo
-    // dispara el usuario a mano (botón/selección múltiple en /guiones y
-    // /adaptados), justamente para no volver a lanzar de golpe más vídeos de
-    // los que el saldo de HeyGen puede pagar.
-    for (const userId of users) {
-      try {
-        const p = await pollHeygenRenders(userId);
-        base.heygen.checked += p.checked;
-        base.heygen.errors += p.errors;
-        if (p.errors > 0) heygenOk = false;
-
-        const c = await processCaptioning(userId);
-        base.heygen.completed += c.completed;
-        base.heygen.errors += c.errors;
-        if (c.errors > 0) heygenOk = false;
-      } catch (e) {
-        console.warn(`[cycle] u${userId} HeyGen:`, (e as Error).message);
-        heygenOk = false;
-      }
-    }
-
-    // Fase 6: Metricool — programa (con antelación, autoPublish deja el
-    // momento exacto en sus manos) todo lo que ya esté 'por_subir' con vídeo
-    // adjunto y todavía no se haya intentado con alguna cuenta destino activa.
-    for (const userId of users) {
-      try {
-        const p = await publishPendingContentItems(userId);
-        base.publish.checked += p.checked;
-        base.publish.scheduled += p.scheduled;
-        base.publish.errors += p.errors;
-        base.publish.noAccounts += p.noAccounts;
-        if (p.errors > 0) publishOk = false;
-      } catch (e) {
-        console.warn(`[cycle] u${userId} Metricool:`, (e as Error).message);
-        publishOk = false;
-      }
-    }
+    // El ciclo natural del worker termina aquí a propósito: SOLO noticias +
+    // espionaje de competencia + clasificar + generar guiones. HeyGen
+    // (comprobar/editar vídeos) y Metricool (publicar) son un "proceso 2"
+    // aparte que el usuario dispara a mano (ver runVideoPipelineForUser) —
+    // así el renderizado con Chromium+ffmpeg (CPU a tope) nunca compite por
+    // recursos con este ciclo automático ni deja la web sin CPU para
+    // responder sin que el usuario lo haya decidido en ese momento.
 
     recordHeartbeat({
       ok: true,

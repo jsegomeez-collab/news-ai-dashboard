@@ -324,16 +324,26 @@ function incrementCaptionAttempts(type: SourceType, id: number): void {
   ).run(new Date().toISOString(), type, id);
 }
 
-// `source` acota a un único guion — ver pollHeygenRenders más arriba.
+// `source` acota a un único guion — ver pollHeygenRenders más arriba. `limit`
+// tapa cuántos renders arranca de una sentada: cada uno abre Chromium+ffmpeg
+// a tope de CPU, y esta instancia comparte esa CPU con la web — sin tope, si
+// el worker estuvo parado un rato y se acumularon varios, el primer ciclo al
+// volver a arrancar los encadenaba TODOS seguidos y dejaba la web sin CPU
+// para responder durante varios minutos (visto en producción: la página
+// quedaba "viva" pero tardaba minutos en cargar). Con tope, el resto del
+// backlog se reparte entre los siguientes ciclos en vez de una sola ráfaga.
 export async function processCaptioning(
   userId?: number,
-  source?: { type: SourceType; id: number }
+  source?: { type: SourceType; id: number },
+  limit?: number
 ): Promise<{ checked: number; completed: number; errors: number; noKey: number }> {
   const { clause: scope, params } = scopeClause(userId, source);
+  const limitClause = limit !== undefined ? ` LIMIT ${Number(limit)}` : "";
   const rows = db
     .prepare(
       `SELECT id, user_id, source_type, source_id, video_path, duration_sec, caption_attempts
-       FROM heygen_renders WHERE status = 'captioning' AND video_path IS NOT NULL${scope}`
+       FROM heygen_renders WHERE status = 'captioning' AND video_path IS NOT NULL${scope}
+       ORDER BY updated_at ASC${limitClause}`
     )
     .all(...(params as never[])) as {
     id: number;

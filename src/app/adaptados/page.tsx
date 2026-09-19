@@ -12,6 +12,7 @@ import type { ContentItem } from "@/lib/contentItems";
 import { SCRIPT_STATUSES, STATUS_LABEL } from "@/lib/status";
 import { HeygenRenderStatus } from "@/components/HeygenRenderStatus";
 import { HeygenBulkBar } from "@/components/HeygenBulkBar";
+import { HeygenProcessButton } from "@/components/HeygenProcessButton";
 
 const PAGE_SIZE = 20;
 
@@ -482,6 +483,7 @@ export default function AdaptadosPage() {
 
   return (
     <div>
+      <HeygenProcessButton />
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-white">Guiones adaptados</h2>
         <p className="mt-1 text-sm text-zinc-500">
