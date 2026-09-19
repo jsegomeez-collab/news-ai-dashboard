@@ -70,12 +70,19 @@ export async function renderCaptionedVideo(opts: RenderCaptionedVideoOptions): P
 
     const composition = await selectComposition({ serveUrl, id: "CaptionedVideo", inputProps });
 
+    // Sin concurrency, Remotion abre tantas pestañas de Chromium en paralelo
+    // como CPUs detecte — en la misma instancia pequeña de Render donde
+    // corren también el servidor web y el worker, eso se come la RAM
+    // disponible y el propio Render mata el proceso (memory limit -> 502
+    // para todo el mundo, no solo para quien pidió el vídeo). Renderiza más
+    // despacio, un frame de Chromium a la vez, pero no revienta la memoria.
     await renderMedia({
       composition,
       serveUrl,
       codec: "h264",
       outputLocation: opts.outPath,
       inputProps,
+      concurrency: 1,
     });
   } finally {
     local.close();

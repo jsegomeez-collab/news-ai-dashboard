@@ -88,7 +88,8 @@ function upsertRenderProcessing(userId: number, type: SourceType, id: number, he
     `INSERT INTO heygen_renders(user_id, source_type, source_id, heygen_video_id, status, cost_usd, created_at, updated_at)
      VALUES(?, ?, ?, ?, 'processing', ?, ?, ?)
      ON CONFLICT(source_type, source_id) DO UPDATE SET
-       heygen_video_id = excluded.heygen_video_id, status = 'processing', cost_usd = excluded.cost_usd, error_msg = NULL, updated_at = excluded.updated_at`
+       heygen_video_id = excluded.heygen_video_id, status = 'processing', cost_usd = excluded.cost_usd,
+       error_msg = NULL, caption_attempts = 0, updated_at = excluded.updated_at`
   ).run(userId, type, id, heygenVideoId, estimatedCostUsd, now, now);
 }
 
@@ -310,6 +311,19 @@ function saveGeneratedVideoToDrive(
   }
 }
 
+// Tope de intentos de la pasada de subtítulos antes de rendirse: un render
+// que agota la memoria del servidor (Chromium vía Remotion) mata el proceso
+// entero SIN que ningún catch llegue a ejecutarse, así que sin este tope se
+// reintentaba el mismo vídeo en cuanto el proceso volvía a arrancar — un
+// bucle de caídas por falta de memoria, no solo un vídeo perdido.
+const MAX_CAPTION_ATTEMPTS = 3;
+
+function incrementCaptionAttempts(type: SourceType, id: number): void {
+  db.prepare(
+    `UPDATE heygen_renders SET caption_attempts = caption_attempts + 1, updated_at = ? WHERE source_type = ? AND source_id = ?`
+  ).run(new Date().toISOString(), type, id);
+}
+
 // `source` acota a un único guion — ver pollHeygenRenders más arriba.
 export async function processCaptioning(
   userId?: number,
@@ -318,7 +332,7 @@ export async function processCaptioning(
   const { clause: scope, params } = scopeClause(userId, source);
   const rows = db
     .prepare(
-      `SELECT id, user_id, source_type, source_id, video_path, duration_sec
+      `SELECT id, user_id, source_type, source_id, video_path, duration_sec, caption_attempts
        FROM heygen_renders WHERE status = 'captioning' AND video_path IS NOT NULL${scope}`
     )
     .all(...(params as never[])) as {
@@ -328,6 +342,7 @@ export async function processCaptioning(
     source_id: number;
     video_path: string;
     duration_sec: number | null;
+    caption_attempts: number;
   }[];
 
   let checked = 0,
@@ -338,6 +353,27 @@ export async function processCaptioning(
   for (const r of rows) {
     const key = `${r.source_type}:${r.source_id}`;
     if (renderKeysInFlight.has(key)) continue;
+
+    if (r.caption_attempts >= MAX_CAPTION_ATTEMPTS) {
+      const msg = `Falló el renderizado de subtítulos ${MAX_CAPTION_ATTEMPTS} veces seguidas (probable falta de memoria en el servidor) — se deja de reintentar`;
+      console.warn(`[heygen] render ${r.id} (${r.source_type} ${r.source_id}): ${msg}`);
+      markRenderError(r.source_type, r.source_id, msg);
+      if (existsSync(r.video_path)) {
+        const source = getSource(r.user_id, r.source_type, r.source_id);
+        saveGeneratedVideoToDrive(
+          r.user_id,
+          r.source_type,
+          r.source_id,
+          source?.title ?? null,
+          r.video_path,
+          true,
+          `Vídeo del avatar sin subtítulos — ${msg}.`
+        );
+      }
+      errors++;
+      continue;
+    }
+
     const settings = readUserSettings(r.user_id);
     if (!isOpenAiKeyFormat(settings.openaiKey)) {
       noKey++;
@@ -345,6 +381,10 @@ export async function processCaptioning(
     }
     checked++;
     renderKeysInFlight.add(key);
+    // Se incrementa y guarda ANTES de arrancar Remotion (no en el catch): si
+    // el proceso muere a media por falta de memoria, el intento ya quedó
+    // contado para cuando el worker vuelva a arrancar.
+    incrementCaptionAttempts(r.source_type, r.source_id);
     try {
       const source = getSource(r.user_id, r.source_type, r.source_id);
       const { widthPx, heightPx } = dimsForFormat(source?.format ?? "reel");

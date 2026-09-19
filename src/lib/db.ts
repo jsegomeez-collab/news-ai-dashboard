@@ -590,5 +590,19 @@ CREATE TABLE IF NOT EXISTS content_item_publications (
 );
 CREATE INDEX IF NOT EXISTS idx_cip_content_item ON content_item_publications(content_item_id);
 `);
+
+  // Cuántas veces se ha intentado la pasada de subtítulos (Whisper + Remotion)
+  // de este render. Se incrementa y GUARDA antes de arrancar Remotion, no
+  // después: un render que agota la memoria del servidor (Chromium) hace que
+  // Render mate el proceso entero, sin que ningún catch llegue a ejecutarse —
+  // sin este contador persistido de antemano, ese mismo render se reintentaba
+  // en cuanto el proceso volvía a arrancar, una y otra vez, en un bucle de
+  // caídas por falta de memoria (visto en producción: dos "Instance failed:
+  // ran out of memory" en 7 minutos).
+  const hcols2 = r.prepare(`PRAGMA table_info(heygen_renders)`).all() as { name: string }[];
+  if (!hcols2.some((c) => c.name === "caption_attempts")) {
+    r.exec(`ALTER TABLE heygen_renders ADD COLUMN caption_attempts INTEGER NOT NULL DEFAULT 0`);
+    console.log("[db] columna caption_attempts añadida a heygen_renders");
+  }
 }
 
