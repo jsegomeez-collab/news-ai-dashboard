@@ -338,12 +338,19 @@ export async function processCaptioning(
   limit?: number
 ): Promise<{ checked: number; completed: number; errors: number; noKey: number }> {
   const { clause: scope, params } = scopeClause(userId, source);
-  const limitClause = limit !== undefined ? ` LIMIT ${Number(limit)}` : "";
+  // `limit` se aplica en JS, no con un LIMIT en el SQL: si se aplicara en el
+  // SQL, un `limit` bajo (p.ej. 1 desde runVideoPipelineForUser) podría traer
+  // como única fila justo un render que otra llamada solapada ya tiene en
+  // `renderKeysInFlight` — sin ninguna otra fila de repuesto, esa llamada
+  // procesaría CERO renders aunque hubiera más esperando. Trayendo todas las
+  // filas candidatas y aplicando el tope solo a las que de verdad se arrancan
+  // (`checked`), una fila en curso simplemente se salta y se prueba la
+  // siguiente.
   const rows = db
     .prepare(
       `SELECT id, user_id, source_type, source_id, video_path, duration_sec, caption_attempts
        FROM heygen_renders WHERE status = 'captioning' AND video_path IS NOT NULL${scope}
-       ORDER BY updated_at ASC${limitClause}`
+       ORDER BY updated_at ASC`
     )
     .all(...(params as never[])) as {
     id: number;
@@ -361,6 +368,7 @@ export async function processCaptioning(
     noKey = 0;
 
   for (const r of rows) {
+    if (limit !== undefined && checked >= limit) break;
     const key = `${r.source_type}:${r.source_id}`;
     if (renderKeysInFlight.has(key)) continue;
 

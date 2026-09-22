@@ -16,8 +16,6 @@ function bool(key: string, fallback: boolean): boolean {
 }
 
 export const env = {
-  anthropicKey: str("ANTHROPIC_API_KEY"),
-
   modelClassify: str("MODEL_CLASSIFY", "claude-haiku-4-5"),
   modelGenerate: str("MODEL_GENERATE", "claude-sonnet-4-6"),
   modelPremium: str("MODEL_PREMIUM", "claude-opus-4-8"),
@@ -60,10 +58,6 @@ export const env = {
 
 export function isAdminEmail(email: string): boolean {
   return env.adminEmails.includes(email.trim().toLowerCase());
-}
-
-export function hasApiKey(): boolean {
-  return env.anthropicKey.startsWith("sk-ant-");
 }
 
 // Día UTC (YYYY-MM-DD) usado como clave en usage_log: quien escribe el gasto

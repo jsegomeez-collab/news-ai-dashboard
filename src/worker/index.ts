@@ -39,31 +39,18 @@ function describeTranscription(trans: Awaited<ReturnType<typeof runCycle>>["tran
   return "";
 }
 
-function describeHeygen(hg: Awaited<ReturnType<typeof runCycle>>["heygen"]): string {
-  if (hg.completed === 0 && hg.errors === 0) return "";
-  const parts = [];
-  if (hg.completed > 0) parts.push(`${hg.completed} listos`);
-  if (hg.errors > 0) parts.push(`${hg.errors} con error`);
-  return ` · heygen: ${parts.join(", ")}`;
-}
-
-function describePublish(p: Awaited<ReturnType<typeof runCycle>>["publish"]): string {
-  if (p.scheduled === 0 && p.errors === 0) return "";
-  const parts = [];
-  if (p.scheduled > 0) parts.push(`${p.scheduled} programados`);
-  if (p.errors > 0) parts.push(`${p.errors} con error`);
-  return ` · metricool: ${parts.join(", ")}`;
-}
-
 async function cycle(): Promise<void> {
   console.log(`\n[${ts()}] ▶ ciclo iniciado`);
   const r = await runCycle();
   if (!r.ok) console.warn(`[${ts()}] ⚠ ${r.error}`);
 
+  // HeyGen/Metricool ya no van en este ciclo (ver runVideoPipelineForUser en
+  // pipeline.ts) — corren aparte, bajo demanda del botón "Continuar proceso
+  // de vídeos", que informa de su resultado directamente en pantalla.
   console.log(
     `[${ts()}] ✔ noticias: ${r.inserted}/${r.fetched} · ` +
       `u${r.users} · clasif: ${r.classified} · guiones: ${r.generated}` +
-      `${describeCompetitor(r.competitor)}${describeTranscription(r.transcribed)}${describeHeygen(r.heygen)}${describePublish(r.publish)}`
+      `${describeCompetitor(r.competitor)}${describeTranscription(r.transcribed)}`
   );
 }
 

@@ -28,8 +28,24 @@ function captionFor(item: DueItem): string {
   return (item.title ?? "").slice(0, 2100);
 }
 
-function hasAnyPublication(contentItemId: number): boolean {
-  return !!db.prepare(`SELECT 1 FROM content_item_publications WHERE content_item_id = ?`).get(contentItemId);
+// Reclama ATÓMICAMENTE este content_item para publicarlo, ANTES de tocar la
+// red: si dos llamadas concurrentes a publishPendingContentItems coinciden
+// (dos pestañas, doble click en "Continuar proceso de vídeos"), ambas verían
+// "sin publicaciones todavía" con un simple SELECT previo y las dos subirían
+// el MISMO vídeo a Metricool — justo el duplicado que la rotación por cuenta
+// existe para evitar. El UNIQUE de content_item_id hace que, si dos INSERT
+// compiten, como mucho uno gane la fila; el perdedor ve changes=0 y se retira
+// sin haber llamado a Metricool.
+function claimForPublication(contentItemId: number, accountId: number): boolean {
+  const now = new Date().toISOString();
+  const res = db
+    .prepare(
+      `INSERT INTO content_item_publications(content_item_id, publish_account_id, status, created_at, updated_at)
+       VALUES(?, ?, 'pending', ?, ?)
+       ON CONFLICT(content_item_id) DO NOTHING`
+    )
+    .run(contentItemId, accountId, now, now);
+  return res.changes > 0;
 }
 
 // Rotación: el MISMO vídeo nunca sale en más de una cuenta a la vez —
@@ -50,18 +66,18 @@ function nextAccountForRotation(userId: number, accounts: PublishAccount[]): Pub
   return accounts[n % accounts.length];
 }
 
-function recordPublication(
+// Actualiza la fila ya reclamada por claimForPublication con el resultado
+// real — nunca inserta (eso ya lo hizo el claim).
+function recordPublicationResult(
   contentItemId: number,
-  accountId: number,
   status: "scheduled" | "error",
   metricoolPostId: string | null,
   errorMsg: string | null
 ): void {
-  const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO content_item_publications(content_item_id, publish_account_id, metricool_post_id, status, error_msg, created_at, updated_at)
-     VALUES(?, ?, ?, ?, ?, ?, ?)`
-  ).run(contentItemId, accountId, metricoolPostId, status, errorMsg, now, now);
+    `UPDATE content_item_publications SET status = ?, metricool_post_id = ?, error_msg = ?, updated_at = ?
+     WHERE content_item_id = ?`
+  ).run(status, metricoolPostId, errorMsg, new Date().toISOString(), contentItemId);
 }
 
 async function publishToAccount(
@@ -83,10 +99,10 @@ async function publishToAccount(
       mediaUrl,
       publicationDateUTC,
     });
-    recordPublication(item.id, account.id, "scheduled", postId, null);
+    recordPublicationResult(item.id, "scheduled", postId, null);
     return "scheduled";
   } catch (e) {
-    recordPublication(item.id, account.id, "error", null, (e as Error).message.slice(0, 500));
+    recordPublicationResult(item.id, "error", null, (e as Error).message.slice(0, 500));
     return "error";
   }
 }
@@ -116,8 +132,6 @@ export async function publishPendingContentItems(
     noAccounts = 0;
 
   for (const item of items) {
-    if (hasAnyPublication(item.id)) continue; // ya se le asignó su única cuenta
-
     const settings = readUserSettings(item.user_id);
     if (!settings.metricoolUserToken || !settings.metricoolUserId) continue; // sin Metricool configurado: se ignora
 
@@ -127,8 +141,10 @@ export async function publishPendingContentItems(
       continue;
     }
 
-    checked++;
     const account = nextAccountForRotation(item.user_id, accounts);
+    if (!claimForPublication(item.id, account.id)) continue; // ya reclamado (por esta u otra llamada concurrente)
+
+    checked++;
     const result = await publishToAccount(item, account, settings.metricoolUserToken, settings.metricoolUserId);
     if (result === "scheduled") scheduled++;
     else errors++;

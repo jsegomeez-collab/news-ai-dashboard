@@ -11,13 +11,6 @@ export const DRIVE_STATUS_LABEL: Record<string, string> = {
   subido: "Subido",
 };
 
-export const DRIVE_STATUS_COLOR: Record<string, string> = {
-  por_grabar: "bg-zinc-700 text-zinc-300",
-  editando: "bg-amber-700 text-amber-100",
-  por_subir: "bg-blue-700 text-blue-100",
-  subido: "bg-emerald-700 text-white",
-};
-
 export function driveKindIcon(kind: string): string {
   return kind === "video" ? "🎬" : "🎙️";
 }

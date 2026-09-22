@@ -48,16 +48,6 @@ const LINK_TITLE_SQL = `
   END AS linked_title
 `;
 
-export function listContentItemsInRange(userId: number, from: string, to: string): ContentItem[] {
-  return db
-    .prepare(
-      `SELECT ci.*, ${LINK_TITLE_SQL} FROM content_items ci
-       WHERE ci.user_id = ? AND ci.scheduled_date >= ? AND ci.scheduled_date < ?
-       ORDER BY ci.scheduled_date ASC`
-    )
-    .all(userId, from, to) as ContentItem[];
-}
-
 export function getContentItem(userId: number, id: number): ContentItem | null {
   return (
     (db

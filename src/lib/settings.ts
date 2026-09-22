@@ -173,10 +173,6 @@ function clampInt(v: unknown, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
-export function hasUserKey(userId: number): boolean {
-  return readUserSettings(userId).anthropicKey.startsWith("sk-ant-");
-}
-
 // ¿Estamos dentro de una ráfaga de generación activa según la ventana del usuario?
 // windowIntervalHours=0 → siempre activo. Si no, ráfagas de windowMinutes cada
 // windowIntervalHours horas, alineadas a la medianoche UTC.

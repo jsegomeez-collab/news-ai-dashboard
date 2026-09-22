@@ -48,7 +48,8 @@ export function HeygenProcessButton() {
         {running ? "Procesando…" : "▶ Continuar proceso de vídeos"}
       </button>
       <span className="text-xs text-zinc-500">
-        Comprueba HeyGen, edita con subtítulos y publica en Metricool los vídeos ya arrancados.
+        Comprueba HeyGen, edita con subtítulos (un vídeo por pulsación, para no saturar la CPU) y
+        publica en Metricool lo que ya esté listo. Si queda más de uno en cola, pulsa otra vez.
       </span>
       {result && <span className="text-xs text-zinc-400">{result}</span>}
     </div>

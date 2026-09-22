@@ -19,14 +19,6 @@ export type Heartbeat = {
   competitorInserted: number;
   transcribedProcessed: number;
   transcribedErrors: number;
-  heygenOk: boolean;
-  heygenChecked: number;
-  heygenCompleted: number;
-  heygenErrors: number;
-  publishOk: boolean;
-  publishChecked: number;
-  publishScheduled: number;
-  publishErrors: number;
 };
 
 export function recordHeartbeat(h: {
@@ -41,34 +33,20 @@ export function recordHeartbeat(h: {
   competitorInserted: number;
   transcribedProcessed: number;
   transcribedErrors: number;
-  heygenOk: boolean;
-  heygenChecked: number;
-  heygenCompleted: number;
-  heygenErrors: number;
-  publishOk: boolean;
-  publishChecked: number;
-  publishScheduled: number;
-  publishErrors: number;
 }): void {
   try {
     db.prepare(
       `INSERT INTO worker_heartbeat(
          id, last_run_at, last_ok, last_error, fetched, inserted, classified, generated,
-         competitor_ok, competitor_checked, competitor_inserted, transcribed_processed, transcribed_errors,
-         heygen_ok, heygen_checked, heygen_completed, heygen_errors,
-         publish_ok, publish_checked, publish_scheduled, publish_errors
+         competitor_ok, competitor_checked, competitor_inserted, transcribed_processed, transcribed_errors
        )
-       VALUES(1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES(1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          last_run_at=excluded.last_run_at, last_ok=excluded.last_ok, last_error=excluded.last_error,
          fetched=excluded.fetched, inserted=excluded.inserted, classified=excluded.classified, generated=excluded.generated,
          competitor_ok=excluded.competitor_ok, competitor_checked=excluded.competitor_checked,
          competitor_inserted=excluded.competitor_inserted, transcribed_processed=excluded.transcribed_processed,
-         transcribed_errors=excluded.transcribed_errors,
-         heygen_ok=excluded.heygen_ok, heygen_checked=excluded.heygen_checked,
-         heygen_completed=excluded.heygen_completed, heygen_errors=excluded.heygen_errors,
-         publish_ok=excluded.publish_ok, publish_checked=excluded.publish_checked,
-         publish_scheduled=excluded.publish_scheduled, publish_errors=excluded.publish_errors`
+         transcribed_errors=excluded.transcribed_errors`
     ).run(
       new Date().toISOString(),
       h.ok ? 1 : 0,
@@ -81,15 +59,7 @@ export function recordHeartbeat(h: {
       h.competitorChecked,
       h.competitorInserted,
       h.transcribedProcessed,
-      h.transcribedErrors,
-      h.heygenOk ? 1 : 0,
-      h.heygenChecked,
-      h.heygenCompleted,
-      h.heygenErrors,
-      h.publishOk ? 1 : 0,
-      h.publishChecked,
-      h.publishScheduled,
-      h.publishErrors
+      h.transcribedErrors
     );
   } catch (e) {
     console.warn("[heartbeat] no se pudo registrar:", (e as Error).message);
@@ -100,9 +70,7 @@ export function readHeartbeat(): Heartbeat | null {
   const row = db
     .prepare(
       `SELECT last_run_at, last_ok, last_error, fetched, inserted, classified, generated,
-              competitor_ok, competitor_checked, competitor_inserted, transcribed_processed, transcribed_errors,
-              heygen_ok, heygen_checked, heygen_completed, heygen_errors,
-              publish_ok, publish_checked, publish_scheduled, publish_errors
+              competitor_ok, competitor_checked, competitor_inserted, transcribed_processed, transcribed_errors
        FROM worker_heartbeat WHERE id = 1`
     )
     .get() as
@@ -119,14 +87,6 @@ export function readHeartbeat(): Heartbeat | null {
         competitor_inserted: number;
         transcribed_processed: number;
         transcribed_errors: number;
-        heygen_ok: number;
-        heygen_checked: number;
-        heygen_completed: number;
-        heygen_errors: number;
-        publish_ok: number;
-        publish_checked: number;
-        publish_scheduled: number;
-        publish_errors: number;
       }
     | undefined;
   if (!row) return null;
@@ -143,13 +103,5 @@ export function readHeartbeat(): Heartbeat | null {
     competitorInserted: row.competitor_inserted,
     transcribedProcessed: row.transcribed_processed,
     transcribedErrors: row.transcribed_errors,
-    heygenOk: !!row.heygen_ok,
-    heygenChecked: row.heygen_checked,
-    heygenCompleted: row.heygen_completed,
-    heygenErrors: row.heygen_errors,
-    publishOk: !!row.publish_ok,
-    publishChecked: row.publish_checked,
-    publishScheduled: row.publish_scheduled,
-    publishErrors: row.publish_errors,
   };
 }

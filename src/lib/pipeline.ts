@@ -124,24 +124,51 @@ export async function runUserCycle(
 export async function runVideoPipelineForUser(
   userId: number
 ): Promise<{ ok: boolean; checked: number; completed: number; errors: number; published: number; error?: string }> {
+  // Cada fase se captura por separado (mismo motivo que antes tenían su propio
+  // .catch() dentro del bucle de runCycle): si p.ej. pollHeygenRenders revienta
+  // por algo fuera de su propio try/catch interno (una consulta a la BD, por
+  // ejemplo), processCaptioning y publishPendingContentItems no deben dejar de
+  // intentarse — puede haber vídeos ya listos para subtítulos o para publicar
+  // que no tienen nada que ver con ese fallo.
+  let checked = 0,
+    completed = 0,
+    errors = 0,
+    published = 0;
+  let error: string | undefined;
+
   try {
     const p = await pollHeygenRenders(userId);
-    const c = await processCaptioning(userId, undefined, CAPTION_BATCH);
-    const pub = await publishPendingContentItems(userId);
-    return {
-      ok: true,
-      checked: p.checked + c.checked,
-      completed: c.completed,
-      errors: p.errors + c.errors + pub.errors,
-      published: pub.scheduled,
-    };
+    checked += p.checked;
+    errors += p.errors;
   } catch (e) {
-    return { ok: false, checked: 0, completed: 0, errors: 0, published: 0, error: (e as Error).message };
+    errors++;
+    error = error ?? (e as Error).message;
+    console.warn(`[heygen-process] u${userId} HeyGen:`, (e as Error).message);
   }
-}
 
-export type HeygenCycleResult = { checked: number; completed: number; errors: number };
-export type PublishCycleResult = { checked: number; scheduled: number; errors: number; noAccounts: number };
+  try {
+    const c = await processCaptioning(userId, undefined, CAPTION_BATCH);
+    checked += c.checked;
+    completed += c.completed;
+    errors += c.errors;
+  } catch (e) {
+    errors++;
+    error = error ?? (e as Error).message;
+    console.warn(`[heygen-process] u${userId} subtítulos:`, (e as Error).message);
+  }
+
+  try {
+    const pub = await publishPendingContentItems(userId);
+    published += pub.scheduled;
+    errors += pub.errors;
+  } catch (e) {
+    errors++;
+    error = error ?? (e as Error).message;
+    console.warn(`[heygen-process] u${userId} Metricool:`, (e as Error).message);
+  }
+
+  return { ok: !error, checked, completed, errors, published, error };
+}
 
 export type CycleSummary = {
   ok: boolean;
@@ -153,8 +180,6 @@ export type CycleSummary = {
   generated: number;
   competitor: CompetitorPollResult | null;
   transcribed: TranscribeResult | null;
-  heygen: HeygenCycleResult;
-  publish: PublishCycleResult;
 };
 
 // Un ciclo completo: fetch GLOBAL + competencia (descubrimiento + transcripción) + por usuario (clasificar/generar).
@@ -168,16 +193,12 @@ export async function runCycle(): Promise<CycleSummary> {
     generated: 0,
     competitor: null,
     transcribed: null,
-    heygen: { checked: 0, completed: 0, errors: 0 },
-    publish: { checked: 0, scheduled: 0, errors: 0, noAccounts: 0 },
   };
   // Si el descubrimiento de competencia entero revienta (accountsDue()/DB, no
   // un fallo por-cuenta que ya se traga internamente), lo marcamos aparte:
   // el resto del ciclo (noticias/clasificación/guiones) puede seguir yendo
   // bien y ocultar por completo que la mitad "espionaje" está caída.
   let competitorOk = true;
-  let heygenOk = true;
-  let publishOk = true;
   try {
     // Fase 1: noticias + descubrimiento de competencia en paralelo.
     const [poll, competitor] = await Promise.all([
@@ -271,14 +292,6 @@ export async function runCycle(): Promise<CycleSummary> {
       competitorInserted: base.competitor?.inserted ?? 0,
       transcribedProcessed: base.transcribed?.processed ?? 0,
       transcribedErrors: base.transcribed?.errors ?? 0,
-      heygenOk,
-      heygenChecked: base.heygen.checked,
-      heygenCompleted: base.heygen.completed,
-      heygenErrors: base.heygen.errors,
-      publishOk,
-      publishChecked: base.publish.checked,
-      publishScheduled: base.publish.scheduled,
-      publishErrors: base.publish.errors,
     });
     return base;
   } catch (e) {
@@ -295,14 +308,6 @@ export async function runCycle(): Promise<CycleSummary> {
       competitorInserted: failed.competitor?.inserted ?? 0,
       transcribedProcessed: failed.transcribed?.processed ?? 0,
       transcribedErrors: failed.transcribed?.errors ?? 0,
-      heygenOk,
-      heygenChecked: failed.heygen.checked,
-      heygenCompleted: failed.heygen.completed,
-      heygenErrors: failed.heygen.errors,
-      publishOk,
-      publishChecked: failed.publish.checked,
-      publishScheduled: failed.publish.scheduled,
-      publishErrors: failed.publish.errors,
     });
     return failed;
   }

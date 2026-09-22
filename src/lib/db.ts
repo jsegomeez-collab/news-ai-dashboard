@@ -485,6 +485,13 @@ CREATE TABLE IF NOT EXISTS heygen_usage_log (
   // el heartbeat solo veía noticias/clasificación/guiones, y un fallo total
   // del descubrimiento/transcripción de competencia (Apify caído, yt-dlp
   // roto...) seguía marcando el worker como "sano" en el dashboard.
+  // heygen_ok/heygen_checked/... y publish_ok/publish_checked/... YA NO se
+  // añaden aquí: HeyGen y Metricool se sacaron del ciclo automático (ver
+  // runVideoPipelineForUser en pipeline.ts) y ahora corren solo bajo demanda
+  // del botón "Continuar proceso de vídeos", que informa de su resultado
+  // directamente en pantalla — el heartbeat del worker ya no es quien reporta
+  // esa salud. Una base de datos existente puede conservar esas columnas de
+  // antes (no se borran, solo dejan de escribirse) sin que nada las lea.
   const hcols = r.prepare(`PRAGMA table_info(worker_heartbeat)`).all() as { name: string }[];
   for (const [col, def] of [
     ["competitor_ok", "INTEGER NOT NULL DEFAULT 1"],
@@ -492,18 +499,6 @@ CREATE TABLE IF NOT EXISTS heygen_usage_log (
     ["competitor_inserted", "INTEGER NOT NULL DEFAULT 0"],
     ["transcribed_processed", "INTEGER NOT NULL DEFAULT 0"],
     ["transcribed_errors", "INTEGER NOT NULL DEFAULT 0"],
-    // Mismo motivo que competitor_ok: si HeyGen empieza a fallar (clave revocada,
-    // avatar borrado...) el resto del ciclo sigue yendo bien y lo esconde.
-    ["heygen_ok", "INTEGER NOT NULL DEFAULT 1"],
-    ["heygen_checked", "INTEGER NOT NULL DEFAULT 0"],
-    ["heygen_completed", "INTEGER NOT NULL DEFAULT 0"],
-    ["heygen_errors", "INTEGER NOT NULL DEFAULT 0"],
-    // Mismo motivo: si Metricool falla (token revocado, blogId borrado...) no
-    // debe esconderse bajo la salud de HeyGen — son dos proveedores distintos.
-    ["publish_ok", "INTEGER NOT NULL DEFAULT 1"],
-    ["publish_checked", "INTEGER NOT NULL DEFAULT 0"],
-    ["publish_scheduled", "INTEGER NOT NULL DEFAULT 0"],
-    ["publish_errors", "INTEGER NOT NULL DEFAULT 0"],
   ] as const) {
     if (!hcols.some((c) => c.name === col)) {
       r.exec(`ALTER TABLE worker_heartbeat ADD COLUMN ${col} ${def}`);

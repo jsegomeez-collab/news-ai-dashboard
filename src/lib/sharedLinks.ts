@@ -35,11 +35,6 @@ export function listSharedLinks(userId: number): SharedLinkSummary[] {
   }));
 }
 
-export function deleteSharedLink(userId: number, id: number): boolean {
-  const res = db.prepare(`DELETE FROM shared_links WHERE id = ? AND user_id = ?`).run(id, userId);
-  return res.changes > 0;
-}
-
 // Pública: solo por token, sin userId. Los guiones se releen con el user_id
 // dueño del enlace (nunca el del visitante, que no existe) para que el JSON
 // de "items" no pueda usarse para leer guiones de otro usuario.

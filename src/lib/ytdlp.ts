@@ -63,22 +63,6 @@ export async function fetchRecentVideos(
     });
 }
 
-// Obtiene metadatos COMPLETOS de un único video (más lento pero incluye likes/comentarios).
-export async function fetchFullMeta(videoUrl: string): Promise<YtdlpVideoMeta | null> {
-  try {
-    const { stdout } = await execAsync(
-      "yt-dlp",
-      ["--dump-json", "--no-download", "--no-warnings", "--quiet", videoUrl],
-      { timeout: 60_000 }
-    );
-    const line = stdout.trim().split("\n")[0];
-    if (!line) return null;
-    return JSON.parse(line) as YtdlpVideoMeta;
-  } catch {
-    return null;
-  }
-}
-
 // Descarga solo el audio de un video a una ruta determinada (para transcripción).
 // Requiere ffmpeg instalado para la conversión a mp3.
 export async function downloadAudio(videoUrl: string, outPath: string): Promise<void> {

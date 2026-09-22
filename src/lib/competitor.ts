@@ -590,12 +590,6 @@ export function markAccountChecked(accountId: number): void {
 
 // ─── Pending videos (para el worker) ─────────────────────────────────────────
 
-export function pendingVideos(): { id: number; video_url: string; account_id: number }[] {
-  return db
-    .prepare(`SELECT id, video_url, account_id FROM competitor_videos WHERE status = 'pending' LIMIT 20`)
-    .all() as { id: number; video_url: string; account_id: number }[];
-}
-
 // Videos pendientes de transcribir con el user_id del propietario de la cuenta.
 // Incluye plataforma y media_url para que el transcriptor elija la vía correcta
 // (Instagram → mp4 directo vía fetch; YouTube/TikTok → yt-dlp).
