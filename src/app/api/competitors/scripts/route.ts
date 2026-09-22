@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { listAdaptedScripts, countAdaptedScripts, type AdaptedScriptSort } from "@/lib/competitor";
+import { listAdaptedScripts, listAdaptedScriptIds, countAdaptedScripts, type AdaptedScriptSort } from "@/lib/competitor";
 import { parseIntParam } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,11 @@ export function GET(req: NextRequest) {
   const accountId = Number.isFinite(accountIdRaw) ? accountIdRaw : undefined;
   const format = sp.get("format") || undefined;
   const status = sp.get("status") || undefined;
+
+  if (sp.get("idsOnly")) {
+    return NextResponse.json({ ids: listAdaptedScriptIds(user.id, { accountId, format, status, sort }) });
+  }
+
   const pageSize = parseIntParam(sp.get("pageSize"), 20, 1, 100);
   const page = parseIntParam(sp.get("page"), 1, 1, 1_000_000);
   const offset = (page - 1) * pageSize;

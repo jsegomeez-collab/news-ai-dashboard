@@ -477,6 +477,34 @@ export default function AdaptadosPage() {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
+  // Selecciona/deselecciona los de la página VISIBLE, sin tocar lo ya
+  // seleccionado de otras páginas (la selección ya no se borra al cambiar
+  // de página — antes había que reseleccionar uno a uno en cada una).
+  function toggleSelectPage() {
+    const pageIds = scripts.map((s) => s.id);
+    const allSelected = pageIds.length > 0 && pageIds.every((id) => selected.includes(id));
+    setSelected((prev) =>
+      allSelected ? prev.filter((id) => !pageIds.includes(id)) : [...new Set([...prev, ...pageIds])]
+    );
+  }
+
+  const [selectingAll, setSelectingAll] = useState(false);
+  // Trae los ids de TODAS las páginas que cumplan el filtro actual.
+  async function selectAllPages() {
+    setSelectingAll(true);
+    try {
+      const p = new URLSearchParams({ sort, idsOnly: "1" });
+      if (accountFilter) p.set("accountId", String(accountFilter));
+      if (formatFilter) p.set("format", formatFilter);
+      if (statusFilter) p.set("status", statusFilter);
+      const res = await fetch(`/api/competitors/scripts?${p.toString()}`);
+      const json = (await res.json()) as { ids?: number[] };
+      setSelected(json.ids ?? []);
+    } finally {
+      setSelectingAll(false);
+    }
+  }
+
   function selectClass(extra = "") {
     return `rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200 ${extra}`;
   }
@@ -519,6 +547,23 @@ export default function AdaptadosPage() {
         </select>
         <span className="ml-auto text-xs text-zinc-500">{loading ? "cargando…" : `${total} guiones`}</span>
       </div>
+
+      {scripts.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded border border-edge bg-panel px-3 py-2 text-xs">
+          <label className="flex items-center gap-2 text-zinc-400">
+            <input
+              type="checkbox"
+              checked={scripts.length > 0 && scripts.every((s) => selected.includes(s.id))}
+              onChange={toggleSelectPage}
+              className="h-4 w-4 accent-brand"
+            />
+            Seleccionar página ({scripts.length})
+          </label>
+          <button onClick={selectAllPages} disabled={selectingAll} className="text-brand hover:underline disabled:opacity-50">
+            {selectingAll ? "Seleccionando…" : `Seleccionar TODOS (${total})`}
+          </button>
+        </div>
+      )}
 
       {selected.length > 0 && (
         <div className="mb-4 flex items-center gap-3 rounded-lg border border-brand/40 bg-brand/10 px-4 py-2.5">

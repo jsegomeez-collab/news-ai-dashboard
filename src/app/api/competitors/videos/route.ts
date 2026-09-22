@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { listVideos, countVideos, videoStatusCounts, deleteVideos } from "@/lib/competitor";
+import { listVideos, listVideoIds, countVideos, videoStatusCounts, deleteVideos } from "@/lib/competitor";
 import { parseIntParam, readJsonBody } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +13,14 @@ export function GET(req: NextRequest) {
   const accountIdRaw = sp.get("accountId") ? Number(sp.get("accountId")) : undefined;
   const accountId = Number.isFinite(accountIdRaw) ? accountIdRaw : undefined;
   const status = sp.get("status") ?? undefined;
+
+  // "Seleccionar todos" en el frontend: solo los ids que cumplen el filtro
+  // actual, de TODAS las páginas — sin traer el resto de columnas de cada
+  // video de golpe.
+  if (sp.get("idsOnly")) {
+    return NextResponse.json({ ids: listVideoIds(user.id, { accountId, status }) });
+  }
+
   const pageSize = parseIntParam(sp.get("pageSize"), 20, 1, 100);
   const page = parseIntParam(sp.get("page"), 1, 1, 1_000_000);
   const offset = (page - 1) * pageSize;

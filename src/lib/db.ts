@@ -451,6 +451,17 @@ CREATE TABLE IF NOT EXISTS heygen_usage_log (
     console.log("[db] columna competitor_adapt_limit añadida a user_settings");
   }
 
+  // is_manual: distingue la cuenta especial "enlaces sueltos" (una por
+  // usuario y plataforma, creada sola la primera vez que se pega un enlace a
+  // mano) de las cuentas reales que el usuario monitoriza — para poder
+  // excluirla de la lista de "cuentas" en pantalla sin tocar el resto del
+  // pipeline (sus vídeos se ven igual en /competencia).
+  const acols = r.prepare(`PRAGMA table_info(competitor_accounts)`).all() as { name: string }[];
+  if (!acols.some((c) => c.name === "is_manual")) {
+    r.exec(`ALTER TABLE competitor_accounts ADD COLUMN is_manual INTEGER NOT NULL DEFAULT 0`);
+    console.log("[db] columna is_manual añadida a competitor_accounts");
+  }
+
   // media_url: URL directa del mp4 (Instagram vía Apify) para descargar el audio
   // sin yt-dlp. Las URLs de Instagram caducan, por eso se transcriben en el mismo ciclo.
   const vcols = r.prepare(`PRAGMA table_info(competitor_videos)`).all() as { name: string }[];

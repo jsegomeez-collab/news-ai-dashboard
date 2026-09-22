@@ -87,13 +87,17 @@ export type CompetitorScriptItem = {
 
 // ─── Accounts ────────────────────────────────────────────────────────────────
 
+// is_manual = 0: no lista la cuenta especial "enlaces sueltos" (ver
+// getOrCreateManualAccount) — sus vídeos SÍ se ven en /competencia como
+// cualquier otro, pero ella misma no es una cuenta que el usuario gestione
+// (editar/pausar/borrar) como las que monitoriza de verdad.
 export function listAccounts(userId: number): CompetitorAccount[] {
   return db
     .prepare(
       `SELECT ca.*, COUNT(cv.id) as video_count
        FROM competitor_accounts ca
        LEFT JOIN competitor_videos cv ON cv.account_id = ca.id
-       WHERE ca.user_id = ?
+       WHERE ca.user_id = ? AND ca.is_manual = 0
        GROUP BY ca.id
        ORDER BY ca.created_at DESC`
     )
@@ -131,6 +135,104 @@ export function isValidAccountUrl(platform: string, url: string): boolean {
   if (!hosts) return false;
   const hostname = parsed.hostname.toLowerCase();
   return hosts.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+}
+
+// Detecta la plataforma de un enlace SUELTO de vídeo (un reel, un short, un
+// tiktok concreto) por su dominio — mismo criterio (y misma lista de
+// dominios) que isValidAccountUrl, pero sin exigir de antemano cuál de las
+// tres plataformas es.
+export function detectPlatformFromUrl(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+  const hostname = parsed.hostname.toLowerCase();
+  for (const [platform, hosts] of Object.entries(PLATFORM_HOSTS)) {
+    if (hosts.some((h) => hostname === h || hostname.endsWith(`.${h}`))) return platform;
+  }
+  return null;
+}
+
+const MANUAL_ACCOUNT_HANDLE = "enlaces-sueltos";
+
+// Cuenta especial (una por usuario y plataforma) que sostiene los vídeos
+// añadidos pegando el enlace directo (ver addManualVideos) — no se
+// monitoriza sola (active=0, así accountsDue() nunca la coge) y se excluye
+// de la lista de cuentas en pantalla (ver listAccounts), pero sus vídeos
+// entran al mismo pipeline de transcripción/adaptación que cualquier otro.
+function getOrCreateManualAccount(userId: number, platform: string): number {
+  const existing = db
+    .prepare(`SELECT id FROM competitor_accounts WHERE user_id = ? AND platform = ? AND handle = ?`)
+    .get(userId, platform, MANUAL_ACCOUNT_HANDLE) as { id: number } | undefined;
+  if (existing) return existing.id;
+
+  const res = db
+    .prepare(
+      `INSERT INTO competitor_accounts(user_id, platform, handle, url, display_name, active, is_manual, min_views, min_likes, min_comments, check_interval_hours, created_at)
+       VALUES(?, ?, ?, ?, ?, 0, 1, 0, 0, 0, 999999, ?)`
+    )
+    .run(
+      userId,
+      platform,
+      MANUAL_ACCOUNT_HANDLE,
+      `https://${PLATFORM_HOSTS[platform][0]}`,
+      "🔗 Enlaces añadidos a mano",
+      new Date().toISOString()
+    );
+  return Number(res.lastInsertRowid);
+}
+
+// Añade uno o varios enlaces de vídeo sueltos (no hace falta que sean de una
+// cuenta que ya monitorices) directamente a la cola de transcripción — sin
+// pasar por Apify/yt-dlp para descubrirlos, porque ya sabes exactamente cuál
+// quieres. No trae vistas/likes/comentarios (eso solo lo da el scrapeo de
+// perfil), así que estos vídeos entran sin pasar el filtro de umbrales.
+export function addManualVideos(userId: number, urls: string[]): { added: number; skipped: number; invalid: number } {
+  let added = 0, skipped = 0, invalid = 0;
+  for (const raw of urls) {
+    const url = raw.trim();
+    if (!url) continue;
+    const platform = detectPlatformFromUrl(url);
+    if (!platform) {
+      invalid++;
+      continue;
+    }
+    const accountId = getOrCreateManualAccount(userId, platform);
+    const id = insertVideo(accountId, { video_url: url });
+    if (id !== null) added++;
+    else skipped++; // ya existía (mismo enlace pegado antes) u otro fallo de inserción
+  }
+  return { added, skipped, invalid };
+}
+
+// Cuenta para un escaneo PUNTUAL de un perfil (no una monitorización
+// permanente): reutiliza la fila si ya existe una cuenta con ese
+// (usuario, plataforma, handle) — sea una cuenta real que ya monitorizas o
+// un escaneo puntual anterior del mismo perfil, para que UNIQUE(user_id,
+// platform, handle) nunca choque y para que repetir el escaneo agrupe los
+// vídeos bajo el mismo sitio en vez de crear una cuenta nueva cada vez. Si
+// no existe ninguna, crea una is_manual=1/active=0 (nunca la recoge el
+// scrapeo periódico ni aparece en "tus cuentas").
+export function getOrCreateScanAccount(userId: number, platform: string, handle: string, url: string): number {
+  const normalizedHandle = handle.replace(/^@/, "").toLowerCase().trim();
+  const existing = db
+    .prepare(`SELECT id FROM competitor_accounts WHERE user_id = ? AND platform = ? AND handle = ?`)
+    .get(userId, platform, normalizedHandle) as { id: number } | undefined;
+  if (existing) return existing.id;
+
+  if (!isValidAccountUrl(platform, url)) {
+    throw new Error(`URL inválida para ${platform}: debe ser un enlace http(s) real de esa plataforma`);
+  }
+  const res = db
+    .prepare(
+      `INSERT INTO competitor_accounts(user_id, platform, handle, url, display_name, active, is_manual, min_views, min_likes, min_comments, check_interval_hours, created_at)
+       VALUES(?, ?, ?, ?, NULL, 0, 1, 0, 0, 0, 999999, ?)`
+    )
+    .run(userId, platform, normalizedHandle, url.trim(), new Date().toISOString());
+  return Number(res.lastInsertRowid);
 }
 
 export function createAccount(
@@ -243,6 +345,24 @@ export function listVideos(
        LIMIT ? OFFSET ?`
     )
     .all(...(allParams as never[])) as CompetitorVideo[];
+}
+
+// Solo los ids (sin el resto de columnas) que cumplen el filtro, sin paginar
+// — para "seleccionar todos" en el frontend sin traer los datos completos de
+// cada video de todas las páginas.
+export function listVideoIds(userId: number, opts: { accountId?: number; status?: string } = {}): number[] {
+  const extraWheres: string[] = [];
+  const extraParams: unknown[] = [];
+  if (opts.accountId !== undefined) { extraWheres.push("cv.account_id = ?"); extraParams.push(opts.accountId); }
+  if (opts.status) { extraWheres.push("cv.status = ?"); extraParams.push(opts.status); }
+  const whereClause = ["ca.user_id = ?", ...extraWheres].join(" AND ");
+  return (
+    db
+      .prepare(
+        `SELECT cv.id FROM competitor_videos cv JOIN competitor_accounts ca ON ca.id = cv.account_id WHERE ${whereClause}`
+      )
+      .all(userId, ...(extraParams as never[])) as { id: number }[]
+  ).map((r) => r.id);
 }
 
 export function countVideos(userId: number, opts: { accountId?: number; status?: string } = {}): number {
@@ -495,6 +615,22 @@ export function listAdaptedScripts(
        LIMIT ? OFFSET ?`
     )
     .all(...(params as never[]), limit, offset) as CompetitorScriptItem[];
+}
+
+// Solo los ids que cumplen el filtro actual, de TODAS las páginas — para
+// "seleccionar todos" en el frontend sin traer cada guion completo.
+export function listAdaptedScriptIds(userId: number, opts: AdaptedScriptFilters = {}): number[] {
+  const { clause, params } = adaptedScriptWhere(userId, opts);
+  return (
+    db
+      .prepare(
+        `SELECT cs.id FROM competitor_scripts cs
+         JOIN competitor_videos cv ON cv.id = cs.video_id
+         JOIN competitor_accounts ca ON ca.id = cv.account_id
+         WHERE ${clause}`
+      )
+      .all(...(params as never[])) as { id: number }[]
+  ).map((r) => r.id);
 }
 
 export function countAdaptedScripts(userId: number, opts: AdaptedScriptFilters = {}): number {

@@ -106,6 +106,55 @@ async function fetchForAccount(
   return fetchRecentVideos(account.url, 20);
 }
 
+export type ScanProfileResult = { fetched: number; inserted: number; skipped: number; unavailable: string | null };
+
+// Escaneo PUNTUAL de un perfil: mismo fetch+filtro que pollCompetitorAccounts
+// hace para una cuenta monitorizada, pero disparado una sola vez a demanda
+// (no espera a check_interval_hours ni vuelve a repetirse solo) — para
+// "quiero ver qué hay en este perfil con estos filtros, ahora, sin dejarlo
+// vigilado para siempre". `accountId` ya debe existir (ver
+// getOrCreateScanAccount en competitor.ts).
+export async function scanProfileOnce(
+  accountId: number,
+  userId: number,
+  platform: string,
+  handle: string,
+  url: string,
+  thresholds: { min_views: number; min_likes: number; min_comments: number }
+): Promise<ScanProfileResult> {
+  let videos: YtdlpVideoMeta[];
+  if (platform === "instagram") {
+    const token = readUserSettings(userId).apifyToken;
+    if (!token) return { fetched: 0, inserted: 0, skipped: 0, unavailable: "apify" };
+    videos = await fetchRecentReels(handle, token, 20);
+  } else {
+    if (!(await ytdlpAvailable())) return { fetched: 0, inserted: 0, skipped: 0, unavailable: "yt-dlp" };
+    videos = await fetchRecentVideos(url, 20);
+  }
+
+  let inserted = 0, skipped = 0;
+  for (const v of videos) {
+    if (evaluateVideo(v, thresholds) === "skip") { skipped++; continue; }
+    const id = insertVideo(accountId, {
+      video_url: videoPageUrl(v),
+      video_id: v.id,
+      title: v.title ?? undefined,
+      description: v.description ?? undefined,
+      thumbnail_url: v.thumbnail ?? undefined,
+      views: v.view_count ?? undefined,
+      likes: v.like_count ?? undefined,
+      comments: v.comment_count ?? undefined,
+      shares: v.repost_count ?? undefined,
+      duration_sec: v.duration ?? undefined,
+      published_at: v.published_iso ?? parseYtdlpDate(v.upload_date) ?? undefined,
+      media_url: v.media_url ?? undefined,
+    });
+    if (id !== null) inserted++;
+    else skipped++; // ya lo tenías (mismo video_url de un escaneo/cuenta anterior)
+  }
+  return { fetched: videos.length, inserted, skipped, unavailable: null };
+}
+
 // "skip" = claramente bajo umbral. "insert" = pasa o métrica desconocida (se filtrará en Fase 3).
 function evaluateVideo(
   v: YtdlpVideoMeta,

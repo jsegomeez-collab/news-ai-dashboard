@@ -121,6 +121,171 @@ function AddAccountForm({ onAdded }: { onAdded: () => void }) {
   );
 }
 
+// ─── AddManualLinksForm ────────────────────────────────────────────────────────
+
+// Detecta cuántos enlaces hay pegados (uno por línea, o separados por
+// espacios/comas) según el mismo criterio con el que el backend los separa,
+// solo para el contador en pantalla — el backend vuelve a hacer el split real.
+function countLinks(text: string): number {
+  return text.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean).length;
+}
+
+// Pega uno o VARIOS enlaces de reel/video sueltos a la vez (no hace falta que
+// sean de una cuenta que ya monitorices) y los manda directos a transcribir y
+// adaptar — sin tener que darlos de alta como cuenta ni esperar al scrapeo
+// periódico de un perfil entero.
+function AddManualLinksForm({ onAdded }: { onAdded: () => void }) {
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const count = countLinks(text);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (count === 0) return;
+    setSaving(true);
+    setMsg("");
+    try {
+      const res = await fetch("/api/competitors/videos/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const json = (await res.json()) as { ok?: boolean; message?: string; error?: string };
+      setMsg(json.ok ? json.message ?? "Hecho" : json.error ?? "Error");
+      if (json.ok) {
+        setText("");
+        onAdded();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-lg border border-edge bg-panel p-4 space-y-3">
+      <h3 className="text-sm font-semibold text-white">🔗 Añadir vídeos por enlace</h3>
+      <p className="text-xs text-zinc-500">
+        Pega uno o varios enlaces de Instagram/TikTok/YouTube (uno por línea, o separados por espacios) — se detectan
+        solos y van directos a transcribir y adaptar, sin esperar al scrapeo de la cuenta.
+      </p>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={"https://www.instagram.com/reel/XXXXX/\nhttps://www.tiktok.com/@user/video/1234567890"}
+        rows={4}
+        className="w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand"
+      />
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={saving || count === 0}
+          className="rounded bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {saving ? "Añadiendo…" : count > 0 ? `Añadir ${count} enlace(s)` : "Añadir enlaces"}
+        </button>
+        {msg && <span className="text-xs text-zinc-400">{msg}</span>}
+      </div>
+    </form>
+  );
+}
+
+// ─── ScanProfileForm ────────────────────────────────────────────────────────
+
+// Escaneo PUNTUAL de un perfil: mismos filtros que "Añadir cuenta a espiar",
+// pero de una sola vez — no queda guardado como cuenta monitorizada (no hay
+// que borrarlo después si solo querías echar un vistazo).
+function ScanProfileForm({ onScanned }: { onScanned: () => void }) {
+  const [platform, setPlatform] = useState("instagram");
+  const [handle, setHandle] = useState("");
+  const [url, setUrl] = useState("");
+  const [minViews, setMinViews] = useState(50000);
+  const [minLikes, setMinLikes] = useState(0);
+  const [minComments, setMinComments] = useState(300);
+  const [scanning, setScanning] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const pl = PLATFORMS.find((p) => p.id === platform)!;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setScanning(true);
+    setMsg("");
+    try {
+      const res = await fetch("/api/competitors/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, handle, url, min_views: minViews, min_likes: minLikes, min_comments: minComments }),
+      });
+      const json = (await res.json()) as { ok?: boolean; message?: string; error?: string };
+      setMsg(json.ok ? json.message ?? "Hecho" : json.error ?? "Error");
+      if (json.ok) onScanned();
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-lg border border-edge bg-panel p-4 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-white">🔍 Escanear un perfil ahora (sin guardarlo)</h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          Un vistazo puntual con tus propios filtros — no se queda monitorizándose para siempre como "Añadir cuenta a espiar".
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        {PLATFORMS.map((p) => (
+          <button key={p.id} type="button" onClick={() => setPlatform(p.id)}
+            className={`flex-1 rounded border px-3 py-2 text-sm font-medium transition ${platform === p.id ? "border-brand bg-brand/20 text-white" : "border-edge bg-ink text-zinc-400 hover:text-zinc-200"}`}>
+            {PLATFORM_ICON[p.id]} {p.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="text-sm text-zinc-300">
+          Handle
+          <input value={handle} onChange={(e) => setHandle(e.target.value)} placeholder={pl.placeholder} required
+            className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
+        </label>
+        <label className="text-sm text-zinc-300">
+          URL del perfil
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={pl.urlHint} required
+            className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
+        </label>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase text-zinc-500">Umbrales mínimos (solo para este escaneo)</p>
+        <div className="grid grid-cols-3 gap-3">
+          {([
+            ["👁 Vistas mín.", minViews, setMinViews, 0, 5_000_000, 10000] as const,
+            ["❤️ Likes mín.", minLikes, setMinLikes, 0, 500_000, 1000] as const,
+            ["💬 Comentarios mín.", minComments, setMinComments, 0, 50_000, 100] as const,
+          ] as [string, number, (v: number) => void, number, number, number][]).map(([label, val, setter, min, max, step]) => (
+            <label key={label} className="text-xs text-zinc-400">
+              {label}
+              <input type="number" min={min} max={max} step={step} value={val}
+                onChange={(e) => setter(Number(e.target.value) || 0)}
+                className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={scanning}
+          className="rounded bg-brand2 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          {scanning ? "Escaneando…" : "🔍 Escanear ahora"}
+        </button>
+        {msg && <span className="text-xs text-zinc-400">{msg}</span>}
+      </div>
+    </form>
+  );
+}
+
 // ─── AccountCard ──────────────────────────────────────────────────────────────
 
 function AccountCard({ account, onChanged }: { account: CompetitorAccount; onChanged: () => void }) {
@@ -225,6 +390,14 @@ function VideoCard({ video, selected, onToggleSelect, onDelete, deleting, onAnal
   transcribing: number | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copyTranscript() {
+    if (!video.transcript) return;
+    await navigator.clipboard.writeText(video.transcript);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
 
   return (
     <article className={`rounded-lg border p-4 ${selected ? "border-brand bg-brand/5" : "border-edge bg-panel"}`}>
@@ -322,6 +495,11 @@ function VideoCard({ video, selected, onToggleSelect, onDelete, deleting, onAnal
 
           {expanded && video.transcript && (
             <div className="mt-3 rounded border border-edge/60 bg-ink p-3">
+              <div className="mb-2 flex justify-end">
+                <button onClick={copyTranscript} className="rounded border border-edge px-2 py-0.5 text-xs text-zinc-400 hover:border-brand hover:text-brand">
+                  {copied ? "✓ Copiado" : "📋 Copiar transcripción"}
+                </button>
+              </div>
               <p className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-400">{video.transcript}</p>
             </div>
           )}
@@ -353,6 +531,7 @@ export default function CompetenciaPage() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [videoPage, setVideoPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectingAll, setSelectingAll] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [analyzing, setAnalyzing] = useState<number | null>(null);
@@ -393,9 +572,11 @@ export default function CompetenciaPage() {
     setVideoPage(1);
     setSelectedIds(new Set());
   }
+  // Cambiar de página YA NO borra la selección — antes tenías que
+  // reseleccionar uno a uno en cada página porque esto la vaciaba en cada
+  // click de "Siguiente".
   function changeVideoPage(p: number) {
     setVideoPage(p);
-    setSelectedIds(new Set());
   }
 
   function toggleSelect(id: number) {
@@ -408,9 +589,30 @@ export default function CompetenciaPage() {
   function toggleSelectPage() {
     setSelectedIds((prev) => {
       const allSelected = videos.length > 0 && videos.every((v) => prev.has(v.id));
-      if (allSelected) return new Set();
-      return new Set(videos.map((v) => v.id));
+      const next = new Set(prev);
+      for (const v of videos) {
+        if (allSelected) next.delete(v.id);
+        else next.add(v.id);
+      }
+      return next;
     });
+  }
+
+  // Trae los ids de TODAS las páginas que cumplan el filtro actual (no solo
+  // la visible) — sin esto, seleccionar "todos" solo alcanzaba a los ~20 de
+  // la página actual y había que ir página a página marcando uno a uno.
+  async function selectAllPages() {
+    setSelectingAll(true);
+    try {
+      const params = new URLSearchParams({ idsOnly: "1" });
+      if (accountFilter) params.set("accountId", String(accountFilter));
+      if (statusFilter) params.set("status", statusFilter);
+      const res = await fetch(`/api/competitors/videos?${params.toString()}`);
+      const json = (await res.json()) as { ids?: number[] };
+      setSelectedIds(new Set(json.ids ?? []));
+    } finally {
+      setSelectingAll(false);
+    }
   }
 
   async function deleteVideoIds(ids: number[]): Promise<number> {
@@ -550,6 +752,18 @@ export default function CompetenciaPage() {
             </div>
           )}
           <AddAccountForm onAdded={refreshAccounts} />
+          <ScanProfileForm
+            onScanned={() => {
+              setTab("videos");
+              refreshVideos();
+            }}
+          />
+          <AddManualLinksForm
+            onAdded={() => {
+              setTab("videos");
+              refreshVideos();
+            }}
+          />
 
           {accounts.length === 0 ? (
             <div className="rounded-lg border border-dashed border-edge p-8 text-center text-zinc-500">
@@ -644,6 +858,13 @@ export default function CompetenciaPage() {
                 />
                 Seleccionar página ({videos.length})
               </label>
+              <button
+                onClick={selectAllPages}
+                disabled={selectingAll}
+                className="text-brand hover:underline disabled:opacity-50"
+              >
+                {selectingAll ? "Seleccionando…" : `Seleccionar TODOS (${videosTotal})`}
+              </button>
               {selectedIds.size > 0 && (
                 <>
                   <span className="text-zinc-500">{selectedIds.size} seleccionado(s)</span>
