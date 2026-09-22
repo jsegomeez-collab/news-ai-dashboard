@@ -23,6 +23,7 @@ type DueAccount = {
   min_views: number;
   min_likes: number;
   min_comments: number;
+  scan_limit: number;
 };
 
 // Revisa las cuentas de competencia que toca comprobar y descubre videos nuevos.
@@ -94,7 +95,7 @@ async function fetchForAccount(
       console.warn(`[competitor] @${account.handle}: Instagram requiere token de Apify (Ajustes → Instagram). Omitida.`);
       return null;
     }
-    return fetchRecentReels(account.handle, token, 20);
+    return fetchRecentReels(account.handle, token, account.scan_limit);
   }
 
   // youtube / tiktok
@@ -103,7 +104,7 @@ async function fetchForAccount(
     console.warn(`[competitor] @${account.handle}: yt-dlp no instalado, ${account.platform} omitida.`);
     return null;
   }
-  return fetchRecentVideos(account.url, 20);
+  return fetchRecentVideos(account.url, account.scan_limit);
 }
 
 export type ScanProfileResult = { fetched: number; inserted: number; skipped: number; unavailable: string | null };
@@ -120,16 +121,17 @@ export async function scanProfileOnce(
   platform: string,
   handle: string,
   url: string,
-  thresholds: { min_views: number; min_likes: number; min_comments: number }
+  thresholds: { min_views: number; min_likes: number; min_comments: number },
+  scanLimit: number
 ): Promise<ScanProfileResult> {
   let videos: YtdlpVideoMeta[];
   if (platform === "instagram") {
     const token = readUserSettings(userId).apifyToken;
     if (!token) return { fetched: 0, inserted: 0, skipped: 0, unavailable: "apify" };
-    videos = await fetchRecentReels(handle, token, 20);
+    videos = await fetchRecentReels(handle, token, scanLimit);
   } else {
     if (!(await ytdlpAvailable())) return { fetched: 0, inserted: 0, skipped: 0, unavailable: "yt-dlp" };
-    videos = await fetchRecentVideos(url, 20);
+    videos = await fetchRecentVideos(url, scanLimit);
   }
 
   let inserted = 0, skipped = 0;

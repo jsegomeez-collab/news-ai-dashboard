@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { getOrCreateScanAccount } from "@/lib/competitor";
+import { getOrCreateScanAccount, clampScanLimit } from "@/lib/competitor";
 import { scanProfileOnce } from "@/lib/competitor-pipeline";
 import { readJsonBody } from "@/lib/http";
 
@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
     min_views?: number;
     min_likes?: number;
     min_comments?: number;
+    scan_limit?: number;
   }>(req);
 
   const platform = body.platform ?? "";
@@ -40,9 +41,11 @@ export async function POST(req: NextRequest) {
     min_comments: Math.max(0, body.min_comments ?? 300),
   };
 
+  const scanLimit = clampScanLimit(body.scan_limit);
+
   try {
     const accountId = getOrCreateScanAccount(user.id, platform, handle, url);
-    const result = await scanProfileOnce(accountId, user.id, platform, handle, url, thresholds);
+    const result = await scanProfileOnce(accountId, user.id, platform, handle, url, thresholds, scanLimit);
 
     const message =
       result.unavailable === "apify"

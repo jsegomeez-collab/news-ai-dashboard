@@ -13,6 +13,7 @@ export type CompetitorAccount = {
   min_views: number;
   min_likes: number;
   min_comments: number;
+  scan_limit: number;
   check_interval_hours: number;
   last_checked_at: string | null;
   created_at: string;
@@ -235,6 +236,17 @@ export function getOrCreateScanAccount(userId: number, platform: string, handle:
   return Number(res.lastInsertRowid);
 }
 
+// Tope duro de cuántos vídeos recientes se piden a Apify/yt-dlp de una sentada
+// — por encima de esto el actor de Apify tarda demasiado (su propio timeout
+// son ~5min) o yt-dlp se pone lento innecesariamente. 100 es de sobra para
+// cualquier perfil real; quien necesite más que eso probablemente quiere
+// varios escaneos, no uno gigante.
+export const MAX_SCAN_LIMIT = 100;
+
+export function clampScanLimit(v: number | undefined, fallback = 20): number {
+  return Math.max(1, Math.min(MAX_SCAN_LIMIT, Math.round(v ?? fallback) || fallback));
+}
+
 export function createAccount(
   userId: number,
   data: {
@@ -245,6 +257,7 @@ export function createAccount(
     min_views?: number;
     min_likes?: number;
     min_comments?: number;
+    scan_limit?: number;
     check_interval_hours?: number;
   }
 ): number {
@@ -253,8 +266,8 @@ export function createAccount(
   }
   const res = db
     .prepare(
-      `INSERT INTO competitor_accounts(user_id, platform, handle, url, display_name, min_views, min_likes, min_comments, check_interval_hours, created_at)
-       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO competitor_accounts(user_id, platform, handle, url, display_name, min_views, min_likes, min_comments, scan_limit, check_interval_hours, created_at)
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       userId,
@@ -265,6 +278,7 @@ export function createAccount(
       Math.max(0, data.min_views ?? 50000),
       Math.max(0, data.min_likes ?? 0),
       Math.max(0, data.min_comments ?? 300),
+      clampScanLimit(data.scan_limit),
       Math.max(1, data.check_interval_hours ?? 6),
       new Date().toISOString()
     );
@@ -280,6 +294,7 @@ export function updateAccount(
     min_views?: number;
     min_likes?: number;
     min_comments?: number;
+    scan_limit?: number;
     check_interval_hours?: number;
   }
 ): void {
@@ -290,6 +305,7 @@ export function updateAccount(
   if (data.min_views !== undefined) { fields.push("min_views = ?"); values.push(Math.max(0, data.min_views)); }
   if (data.min_likes !== undefined) { fields.push("min_likes = ?"); values.push(Math.max(0, data.min_likes)); }
   if (data.min_comments !== undefined) { fields.push("min_comments = ?"); values.push(Math.max(0, data.min_comments)); }
+  if (data.scan_limit !== undefined) { fields.push("scan_limit = ?"); values.push(clampScanLimit(data.scan_limit)); }
   if (data.check_interval_hours !== undefined) { fields.push("check_interval_hours = ?"); values.push(Math.max(1, data.check_interval_hours)); }
   if (fields.length === 0) return;
   values.push(accountId, userId);
@@ -705,12 +721,12 @@ export function clearScriptMedia(userId: number, scriptId: number): string | nul
 // de fondo, que sí debe barrer a todo el mundo). Con userId: solo las de ese
 // usuario (uso de los endpoints HTTP, para no procesar cuentas ajenas como
 // efecto colateral de que un usuario pulse "revisar ahora").
-export function accountsDue(userId?: number): { id: number; user_id: number; platform: string; handle: string; url: string; check_interval_hours: number; min_views: number; min_likes: number; min_comments: number }[] {
+export function accountsDue(userId?: number): { id: number; user_id: number; platform: string; handle: string; url: string; check_interval_hours: number; min_views: number; min_likes: number; min_comments: number; scan_limit: number }[] {
   const scope = userId !== undefined ? ` AND user_id = ?` : ``;
   const params = userId !== undefined ? [userId] : [];
   return db
     .prepare(
-      `SELECT id, user_id, platform, handle, url, check_interval_hours, min_views, min_likes, min_comments
+      `SELECT id, user_id, platform, handle, url, check_interval_hours, min_views, min_likes, min_comments, scan_limit
        FROM competitor_accounts
        WHERE active = 1
          AND (last_checked_at IS NULL

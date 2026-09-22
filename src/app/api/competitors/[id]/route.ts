@@ -25,6 +25,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     min_views?: number;
     min_likes?: number;
     min_comments?: number;
+    scan_limit?: number;
     check_interval_hours?: number;
   }>(req);
   updateAccount(user.id, Number(id), body);

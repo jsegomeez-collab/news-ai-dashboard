@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     min_views?: number;
     min_likes?: number;
     min_comments?: number;
+    scan_limit?: number;
     check_interval_hours?: number;
   }>(req);
 

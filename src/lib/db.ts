@@ -462,6 +462,17 @@ CREATE TABLE IF NOT EXISTS heygen_usage_log (
     console.log("[db] columna is_manual añadida a competitor_accounts");
   }
 
+  // scan_limit: cuántos vídeos MÁS RECIENTES del perfil se piden a
+  // Apify/yt-dlp antes de aplicar los umbrales de vistas/likes/comentarios —
+  // antes estaba fijo en 20 en el código; un vídeo viral más viejo que los
+  // últimos `scan_limit` posts del perfil nunca llega ni a mirarse, así que
+  // hace falta poder subirlo. 20 de default para no cambiar el comportamiento
+  // de las cuentas ya existentes.
+  if (!acols.some((c) => c.name === "scan_limit")) {
+    r.exec(`ALTER TABLE competitor_accounts ADD COLUMN scan_limit INTEGER NOT NULL DEFAULT 20`);
+    console.log("[db] columna scan_limit añadida a competitor_accounts");
+  }
+
   // media_url: URL directa del mp4 (Instagram vía Apify) para descargar el audio
   // sin yt-dlp. Las URLs de Instagram caducan, por eso se transcriben en el mismo ciclo.
   const vcols = r.prepare(`PRAGMA table_info(competitor_videos)`).all() as { name: string }[];

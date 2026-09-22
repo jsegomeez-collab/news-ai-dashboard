@@ -38,6 +38,7 @@ function AddAccountForm({ onAdded }: { onAdded: () => void }) {
   const [minViews, setMinViews] = useState(50000);
   const [minComments, setMinComments] = useState(300);
   const [minLikes, setMinLikes] = useState(0);
+  const [scanLimit, setScanLimit] = useState(20);
   const [intervalH, setIntervalH] = useState(6);
   const [saving, setSaving]     = useState(false);
   const [err, setErr]           = useState("");
@@ -51,7 +52,7 @@ function AddAccountForm({ onAdded }: { onAdded: () => void }) {
       const res = await fetch("/api/competitors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, handle, url, min_views: minViews, min_likes: minLikes, min_comments: minComments, check_interval_hours: intervalH }),
+        body: JSON.stringify({ platform, handle, url, min_views: minViews, min_likes: minLikes, min_comments: minComments, scan_limit: scanLimit, check_interval_hours: intervalH }),
       });
       const json = await res.json() as { ok?: boolean; error?: string };
       if (!res.ok) { setErr(json.error ?? "Error"); return; }
@@ -106,6 +107,11 @@ function AddAccountForm({ onAdded }: { onAdded: () => void }) {
 
       <div className="flex items-end gap-4">
         <label className="text-sm text-zinc-300">
+          Vídeos a revisar (máx.)
+          <input type="number" min={1} max={100} value={scanLimit} onChange={(e) => setScanLimit(Math.max(1, Math.min(100, Number(e.target.value) || 20)))}
+            className="mt-1 w-24 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
+        </label>
+        <label className="text-sm text-zinc-300">
           Revisar cada (horas)
           <input type="number" min={1} max={168} value={intervalH} onChange={(e) => setIntervalH(Math.max(1, Number(e.target.value) || 6))}
             className="mt-1 w-24 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
@@ -115,6 +121,9 @@ function AddAccountForm({ onAdded }: { onAdded: () => void }) {
           {saving ? "Guardando…" : "Añadir cuenta"}
         </button>
       </div>
+      <p className="text-xs text-zinc-600">
+        "Vídeos a revisar" son los más recientes que se piden al scrapear — los umbrales de arriba se aplican SOLO sobre esos, nunca miran más atrás en el historial del perfil.
+      </p>
 
       {err && <p className="text-sm text-red-400">{err}</p>}
     </form>
@@ -203,6 +212,7 @@ function ScanProfileForm({ onScanned }: { onScanned: () => void }) {
   const [minViews, setMinViews] = useState(50000);
   const [minLikes, setMinLikes] = useState(0);
   const [minComments, setMinComments] = useState(300);
+  const [scanLimit, setScanLimit] = useState(20);
   const [scanning, setScanning] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -216,7 +226,7 @@ function ScanProfileForm({ onScanned }: { onScanned: () => void }) {
       const res = await fetch("/api/competitors/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, handle, url, min_views: minViews, min_likes: minLikes, min_comments: minComments }),
+        body: JSON.stringify({ platform, handle, url, min_views: minViews, min_likes: minLikes, min_comments: minComments, scan_limit: scanLimit }),
       });
       const json = (await res.json()) as { ok?: boolean; message?: string; error?: string };
       setMsg(json.ok ? json.message ?? "Hecho" : json.error ?? "Error");
@@ -275,13 +285,21 @@ function ScanProfileForm({ onScanned }: { onScanned: () => void }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-end gap-4">
+        <label className="text-sm text-zinc-300">
+          Vídeos a revisar (máx.)
+          <input type="number" min={1} max={100} value={scanLimit} onChange={(e) => setScanLimit(Math.max(1, Math.min(100, Number(e.target.value) || 20)))}
+            className="mt-1 w-24 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
+        </label>
         <button type="submit" disabled={scanning}
           className="rounded bg-brand2 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           {scanning ? "Escaneando…" : "🔍 Escanear ahora"}
         </button>
         {msg && <span className="text-xs text-zinc-400">{msg}</span>}
       </div>
+      <p className="text-xs text-zinc-600">
+        Los umbrales de arriba se aplican SOLO sobre esos vídeos más recientes — no miran más atrás en el historial del perfil.
+      </p>
     </form>
   );
 }
@@ -294,6 +312,7 @@ function AccountCard({ account, onChanged }: { account: CompetitorAccount; onCha
   const [minV, setMinV] = useState(account.min_views);
   const [minL, setMinL] = useState(account.min_likes);
   const [minC, setMinC] = useState(account.min_comments);
+  const [scanLim, setScanLim] = useState(account.scan_limit);
   const [intH, setIntH] = useState(account.check_interval_hours);
 
   async function toggleActive() {
@@ -312,7 +331,7 @@ function AccountCard({ account, onChanged }: { account: CompetitorAccount; onCha
   async function saveEdit() {
     await fetch(`/api/competitors/${account.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ min_views: minV, min_likes: minL, min_comments: minC, check_interval_hours: intH }),
+      body: JSON.stringify({ min_views: minV, min_likes: minL, min_comments: minC, scan_limit: scanLim, check_interval_hours: intH }),
     });
     setEditing(false); onChanged();
   }
@@ -347,17 +366,19 @@ function AccountCard({ account, onChanged }: { account: CompetitorAccount; onCha
         <span>👁 ≥ {fmt(account.min_views)} vistas</span>
         <span>❤️ ≥ {fmt(account.min_likes)} likes</span>
         <span>💬 ≥ {fmt(account.min_comments)} coment.</span>
+        <span>📼 últimos {account.scan_limit}</span>
         <span>🔄 Cada {account.check_interval_hours}h</span>
         {account.last_checked_at && <span>Última revisión: {timeAgo(account.last_checked_at)}</span>}
       </div>
 
       {editing && (
         <div className="mt-4 border-t border-edge/60 pt-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             {([
               ["👁 Vistas mín.", minV, setMinV, 0, 5_000_000, 10000] as const,
               ["❤️ Likes mín.", minL, setMinL, 0, 500_000, 1000] as const,
               ["💬 Coment. mín.", minC, setMinC, 0, 50_000, 100] as const,
+              ["📼 Vídeos a revisar", scanLim, setScanLim, 1, 100, 1] as const,
               ["🔄 Intervalo (h)", intH, setIntH, 1, 168, 1] as const,
             ] as [string, number, (v: number) => void, number, number, number][]).map(([label, val, setter, min, max, step]) => (
               <label key={label} className="text-xs text-zinc-400">
