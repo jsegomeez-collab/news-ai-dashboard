@@ -94,8 +94,17 @@ export async function fetchRecentReels(
   return items.filter((it) => it.videoUrl || it.url).map(mapReel);
 }
 
-// Re-obtiene la URL mp4 fresca de un reel concreto (las URLs de Apify caducan).
-// Se usa como fallback si el media_url guardado ya no sirve al transcribir.
+// Re-obtiene la URL mp4 fresca de un reel concreto (las URLs de Apify caducan,
+// y los enlaces sueltos añadidos a mano nunca tuvieron una guardada — ver
+// addManualVideos en competitor.ts). Se usa como fallback al transcribir.
+//
+// El actor solo tiene UN campo de entrada, "username" (array): acepta
+// usernames, URLs de perfil O enlaces directos de reel — no existe ningún
+// "directUrls" aparte (confirmado contra el input schema real del actor;
+// mandarle ese campo lo ignora en silencio y el actor devuelve 0 resultados,
+// que es justo lo que producía el "sin URL de video de Instagram" en enlaces
+// pegados a mano, ya que esta es la ÚNICA vía que tienen para conseguir su
+// media_url — no vienen de un scrapeo de perfil que ya lo trajera).
 export async function refreshReelMediaUrl(
   reelUrl: string,
   token: string
@@ -104,12 +113,13 @@ export async function refreshReelMediaUrl(
     const items = (await apifyPost(
       `/acts/${REEL_ACTOR}/run-sync-get-dataset-items`,
       token,
-      { directUrls: [reelUrl], resultsLimit: 1 },
+      { username: [reelUrl], resultsLimit: 1 },
       120_000
     )) as ApifyReelItem[];
     const it = Array.isArray(items) ? items[0] : null;
     return it?.videoUrl ?? null;
-  } catch {
+  } catch (e) {
+    console.warn(`[competitor] refreshReelMediaUrl(${reelUrl}) falló:`, (e as Error).message);
     return null;
   }
 }
