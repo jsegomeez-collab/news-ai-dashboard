@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
+import { PageHeader } from "@/components/PageHeader";
 
 type AdminUser = {
   id: number;
@@ -157,14 +158,27 @@ function UserRow({ u, onChanged }: { u: AdminUser; onChanged: () => void }) {
 }
 
 export default function AdminPage() {
-  const { data, refresh } = usePoll<Overview>("/api/admin/overview", 20000);
+  const { data, error, refresh } = usePoll<Overview>("/api/admin/overview", 20000);
 
+  // Un usuario sin rol admin recibe 403: sin esto la página se quedaba en
+  // "Cargando…" para siempre en vez de decir que no tiene acceso.
+  if (!data && error) {
+    return (
+      <p className="text-sm text-zinc-400">
+        {error.includes("403") ? "Esta sección es solo para administradores." : `No se pudo cargar el panel (${error}).`}
+      </p>
+    );
+  }
   if (!data) return <p className="text-sm text-zinc-500">Cargando…</p>;
   if (data.error) return <p className="text-sm text-red-400">{data.error}</p>;
 
   const t = data.totals!;
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Admin"
+        subtitle="Todas las cuentas de la plataforma: gasto, actividad, topes por cuenta y eliminación."
+      />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Usuarios" value={String(t.users)} />
         <Stat label="Noticias (global)" value={String(t.articles)} />

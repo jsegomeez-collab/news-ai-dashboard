@@ -2,6 +2,9 @@
 import { useState } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
 import type { NewsItem } from "@/lib/queries";
+import { PageHeader } from "@/components/PageHeader";
+import { Pagination } from "@/components/Pagination";
+import { PenLine, RefreshCw, Briefcase, Link2 } from "lucide-react";
 
 function relColor(r: number | null): string {
   if (r === null) return "bg-zinc-700 text-zinc-300";
@@ -53,9 +56,9 @@ function GuionizarBtn({ articleId }: { articleId: number }) {
       <button
         onClick={go}
         disabled={state === "loading"}
-        className="rounded bg-brand2 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded bg-brand2 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
       >
-        {state === "loading" ? "Guionizando…" : "✍️ Guionizar ahora"}
+        {state === "loading" ? "Guionizando…" : <><PenLine size={13} /> Guionizar ahora</>}
       </button>
       {msg && (
         <span className={`text-xs ${state === "error" ? "text-red-400" : "text-emerald-400"}`}>{msg}</span>
@@ -98,13 +101,17 @@ export default function NoticiasPage() {
 
   return (
     <div>
+      <PageHeader
+        title="Noticias"
+        subtitle="Noticias de IA clasificadas por relevancia para tu negocio. Desde aquí conviertes cualquiera en guion."
+      />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
           onClick={runNow}
           disabled={running}
-          className="rounded bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
-          {running ? "Actualizando…" : "↻ Actualizar ahora"}
+          <RefreshCw size={14} className={running ? "animate-spin" : ""} /> {running ? "Actualizando…" : "Actualizar ahora"}
         </button>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
           Filtro:
@@ -156,12 +163,12 @@ export default function NoticiasPage() {
             </div>
             {n.business_angle && (
               <p className="mt-2 text-sm text-zinc-300">
-                <span className="text-zinc-500">💼 Ángulo:</span> {n.business_angle}
+                <span className="inline-flex items-center gap-1 text-zinc-500"><Briefcase size={12} /> Ángulo:</span> {n.business_angle}
               </p>
             )}
             {n.actuality_link && (
               <p className="mt-1 text-sm text-zinc-400">
-                <span className="text-zinc-500">🔗 Actualidad:</span> {n.actuality_link}
+                <span className="inline-flex items-center gap-1 text-zinc-500"><Link2 size={12} /> Actualidad:</span> {n.actuality_link}
               </p>
             )}
             <div className="mt-3 border-t border-edge/60 pt-3">
@@ -176,27 +183,7 @@ export default function NoticiasPage() {
         )}
       </div>
 
-      {pages > 1 && (
-        <div className="mt-5 flex items-center justify-center gap-3">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
-          >
-            ← Anterior
-          </button>
-          <span className="text-sm text-zinc-400">
-            Página {page} de {pages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(pages, p + 1))}
-            disabled={page >= pages}
-            className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
-          >
-            Siguiente →
-          </button>
-        </div>
-      )}
+      <Pagination page={page} pages={pages} onChange={setPage} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Clapperboard, Play } from "lucide-react";
 
 // "Proceso 2", separado a propósito del ciclo automático de noticias/guiones
 // (que solo hace eso: noticias -> guiones) y de "Actualizar ahora": aquí se
@@ -39,19 +40,18 @@ export function HeygenProcessButton() {
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-edge bg-panel px-4 py-2.5">
+    <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-edge bg-panel px-3 py-2 text-xs">
+      <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wide text-zinc-500"><Clapperboard size={13} /> Vídeo con avatar</span>
       <button
         onClick={run}
         disabled={running}
-        className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded bg-brand px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+        title="Comprueba HeyGen, añade subtítulos (un vídeo por pulsación) y publica en Metricool lo que ya esté listo"
       >
-        {running ? "Procesando…" : "▶ Continuar proceso de vídeos"}
+        {running ? "Procesando…" : <><Play size={12} /> Continuar proceso</>}
       </button>
-      <span className="text-xs text-zinc-500">
-        Comprueba HeyGen, edita con subtítulos (un vídeo por pulsación, para no saturar la CPU) y
-        publica en Metricool lo que ya esté listo. Si queda más de uno en cola, pulsa otra vez.
-      </span>
-      {result && <span className="text-xs text-zinc-400">{result}</span>}
+      <span className="text-zinc-600">Marca guiones abajo para generar vídeos; este botón avanza los ya arrancados, uno por pulsación.</span>
+      {result && <span className="text-zinc-300">{result}</span>}
     </div>
   );
 }

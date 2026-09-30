@@ -1,9 +1,14 @@
 "use client";
+import { PageHeader } from "@/components/PageHeader";
 import { useMemo, useRef, useState } from "react";
 import { usePoll } from "@/components/usePoll";
 import { DRIVE_STATUSES, DRIVE_STATUS_LABEL, driveKindIcon } from "@/lib/driveUi";
 import { StatusPill } from "@/components/StatusPill";
 import { LinkPicker, type LinkTargetLite } from "@/components/LinkPicker";
+import {
+  Clapperboard, Mic, Newspaper, Trash2, Plus, CalendarDays, Shuffle,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, MoveHorizontal,
+} from "lucide-react";
 
 // Tipos locales (no se importan de @/lib/calendar ni @/lib/contentItems a
 // propósito: esos módulos tocan la BD y no deben entrar en el bundle del
@@ -56,7 +61,7 @@ function MediaSlotEditor({
 }: {
   itemId: number;
   slot: "audio" | "video";
-  label: string;
+  label: React.ReactNode;
   path: string | null;
   mime: string | null;
   originalName: string | null;
@@ -96,7 +101,7 @@ function MediaSlotEditor({
   return (
     <div className="rounded-lg border border-edge/60 bg-ink/50 p-2.5">
       <div className="mb-1.5 flex items-center justify-between text-xs text-zinc-400">
-        <span>{label}</span>
+        <span className="flex items-center gap-1">{label}</span>
         {path && (
           <button onClick={remove} className="text-red-400 hover:underline">quitar</button>
         )}
@@ -165,15 +170,15 @@ function ContentItemCard({ id, onChange }: { id: number; onChange: () => void })
   return (
     <div className={`rounded-xl border bg-panel transition ${expanded ? "border-brand/40" : "border-edge"}`}>
       <button onClick={() => setExpanded((e) => !e)} className="flex w-full items-center gap-3 p-3 text-left">
-        <span className="text-xl">🎬</span>
+        <Clapperboard size={20} className="shrink-0 text-brand2" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">{item.linked_title ?? item.title ?? "(sin título)"}</p>
-          <p className="text-xs text-zinc-500">
-            {item.audio_path ? "🎙️ audio" : "sin audio"} · {item.video_path ? "🎬 video" : "sin video"}
+          <p className="flex items-center gap-1 text-xs text-zinc-500">
+            {item.audio_path ? <><Mic size={12} /> audio</> : "sin audio"} · {item.video_path ? <><Clapperboard size={12} /> video</> : "sin video"}
           </p>
         </div>
         <StatusPill status={item.status} size="sm" />
-        <span className="shrink-0 text-xs text-zinc-500">{expanded ? "▲" : "▼"}</span>
+        {expanded ? <ChevronUp size={14} className="shrink-0 text-zinc-500" /> : <ChevronDown size={14} className="shrink-0 text-zinc-500" />}
       </button>
 
       {expanded && (
@@ -228,19 +233,19 @@ function ContentItemCard({ id, onChange }: { id: number; onChange: () => void })
 
           <div className="grid gap-3 sm:grid-cols-2">
             <MediaSlotEditor
-              itemId={item.id} slot="audio" label="🎙️ Audio (tu voz)"
+              itemId={item.id} slot="audio" label={<><Mic size={13} /> Audio (tu voz)</>}
               path={item.audio_path} mime={item.audio_mime} originalName={item.audio_original_name} size={item.audio_size}
               onChange={refresh}
             />
             <MediaSlotEditor
-              itemId={item.id} slot="video" label="🎬 Video clonado"
+              itemId={item.id} slot="video" label={<><Clapperboard size={13} /> Video clonado</>}
               path={item.video_path} mime={item.video_mime} originalName={item.video_original_name} size={item.video_size}
               onChange={refresh}
             />
           </div>
 
           <div className="flex justify-end border-t border-edge/40 pt-2">
-            <button onClick={remove} className="text-xs text-red-400 hover:underline">🗑 eliminar publicación</button>
+            <button onClick={remove} className="flex items-center gap-1 text-xs text-red-400 hover:underline"><Trash2 size={13} /> eliminar publicación</button>
           </div>
         </div>
       )}
@@ -252,6 +257,7 @@ function ContentItemCard({ id, onChange }: { id: number; onChange: () => void })
 
 function SimpleItemCard({ item, onChange }: { item: CalendarItem; onChange: () => void }) {
   const [date, setDate] = useState(item.date);
+  const SourceIcon = item.source === "drive" ? driveKindIcon(item.kind ?? "audio") : Newspaper;
 
   async function reschedule(d: string) {
     setDate(d);
@@ -266,8 +272,9 @@ function SimpleItemCard({ item, onChange }: { item: CalendarItem; onChange: () =
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-edge bg-panel p-3 text-sm">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-zinc-200">
-          {item.source === "drive" ? driveKindIcon(item.kind ?? "audio") : "📰"} {item.title}
+        <p className="flex items-center gap-1.5 truncate text-zinc-200">
+          <SourceIcon size={14} className="shrink-0" />
+          {item.title}
         </p>
         <p className="text-xs text-zinc-500">{item.source === "drive" ? "Archivo de Drive programado" : "Publicado (métricas reales)"}</p>
       </div>
@@ -337,8 +344,8 @@ function CreateItemForm({
 
   return (
     <div className="space-y-2 rounded-xl border border-brand/50 bg-panel p-3">
-      <p className="text-xs font-medium text-zinc-300">
-        ➕ Nueva publicación{fixedDate ? ` — ${fixedDate}` : ""}
+      <p className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
+        <Plus size={13} /> Nueva publicación{fixedDate ? ` — ${fixedDate}` : ""}
       </p>
       <LinkPicker
         current={link ? { type: link.type, title: link.title } : null}
@@ -447,40 +454,38 @@ export default function CalendarioPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-white">📅 Calendario de contenido</h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Lo que tienes programado y lo que ya has publicado de verdad, en un solo sitio.
-          </p>
-        </div>
-        {view === "calendar" && (
-          <div className="flex items-center gap-2">
-            <button onClick={() => changeMonth(-1)} className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 hover:border-brand">←</button>
-            <span className="w-36 text-center text-sm font-medium text-white">
-              {MONTH_LABEL[monthIndex]} {year}
-            </span>
-            <button onClick={() => changeMonth(1)} className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 hover:border-brand">→</button>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title="Calendario"
+        subtitle="Lo que tienes programado y lo que ya has publicado, en un solo sitio."
+        actions={
+          view === "calendar" ? (
+            <div className="flex items-center gap-2">
+              <button onClick={() => changeMonth(-1)} className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 hover:border-brand"><ChevronLeft size={15} /></button>
+              <span className="w-36 text-center text-sm font-medium text-white">
+                {MONTH_LABEL[monthIndex]} {year}
+              </span>
+              <button onClick={() => changeMonth(1)} className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 hover:border-brand"><ChevronRight size={15} /></button>
+            </div>
+          ) : undefined
+        }
+      />
 
       <div className="mb-4 flex items-center gap-2">
         <button
           onClick={() => setView("calendar")}
-          className={`rounded px-3 py-1.5 text-sm font-medium ${
+          className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium ${
             view === "calendar" ? "bg-brand text-white" : "bg-panel text-zinc-300"
           }`}
         >
-          📅 Calendario
+          <CalendarDays size={15} /> Calendario
         </button>
         <button
           onClick={() => setView("pipeline")}
-          className={`rounded px-3 py-1.5 text-sm font-medium ${
+          className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium ${
             view === "pipeline" ? "bg-brand text-white" : "bg-panel text-zinc-300"
           }`}
         >
-          🔀 Pipeline (en grabación)
+          <Shuffle size={15} /> Pipeline (en grabación)
         </button>
         {view === "pipeline" && (
           <span className="ml-auto text-xs text-zinc-500">{allContentItems.length} publicaciones</span>
@@ -489,7 +494,7 @@ export default function CalendarioPage() {
 
       {view === "pipeline" ? (
         <div className="relative">
-          <p className="mb-2 text-xs text-zinc-600">⟷ desliza para ver el resto de estados</p>
+          <p className="mb-2 flex items-center gap-1.5 text-xs text-zinc-600"><MoveHorizontal size={13} /> desliza para ver el resto de estados</p>
           <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4">
             {DRIVE_STATUSES.map((st) => {
               const col = byStatus(st);
@@ -501,9 +506,9 @@ export default function CalendarioPage() {
                     <button
                       onClick={() => setCreatingStatus(creatingStatus === st ? null : st)}
                       title="Añadir guion en este estado"
-                      className="ml-auto flex h-5 w-5 items-center justify-center rounded-full border border-edge text-xs text-zinc-400 hover:border-brand hover:text-brand"
+                      className="ml-auto flex h-5 w-5 items-center justify-center rounded-full border border-edge text-zinc-400 hover:border-brand hover:text-brand"
                     >
-                      +
+                      <Plus size={12} />
                     </button>
                   </div>
                   <div className="space-y-2">
@@ -572,9 +577,9 @@ export default function CalendarioPage() {
                 <button
                   onClick={() => openDay(dateStr, true)}
                   title="Añadir publicación este día"
-                  className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-brand text-xs font-bold text-white opacity-0 shadow-[0_0_10px_-2px_rgba(59,130,246,0.8)] transition group-hover:flex group-hover:opacity-100"
+                  className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-brand text-white opacity-0 shadow-[0_0_10px_-2px_rgba(59,130,246,0.8)] transition group-hover:flex group-hover:opacity-100"
                 >
-                  +
+                  <Plus size={12} />
                 </button>
               </div>
             );
@@ -588,9 +593,9 @@ export default function CalendarioPage() {
               {!creatingDate && (
                 <button
                   onClick={() => setCreatingDate(selectedDate)}
-                  className="rounded-lg border border-edge px-2.5 py-1 text-xs text-zinc-300 hover:border-brand hover:text-brand"
+                  className="flex items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1 text-xs text-zinc-300 hover:border-brand hover:text-brand"
                 >
-                  ＋ Añadir publicación
+                  <Plus size={13} /> Añadir publicación
                 </button>
               )}
             </div>

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Newspaper, Radar } from "lucide-react";
 
 export type LinkTargetLite = { type: "script" | "competitor_script"; id: number; title: string; format: string };
 
@@ -43,8 +44,8 @@ export function LinkPicker({
   if (current?.type && !open) {
     return (
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded bg-brand2/15 px-2 py-0.5 text-brand2">
-          {current.type === "script" ? "📰" : "🕵️"} {current.title ?? "guion"}
+        <span className="flex items-center gap-1.5 rounded bg-brand2/15 px-2 py-0.5 text-brand2">
+          {current.type === "script" ? <Newspaper size={12} /> : <Radar size={12} />} {current.title ?? "guion"}
         </span>
         <button onClick={() => setOpen(true)} className="text-zinc-500 hover:underline">cambiar</button>
         <button onClick={onUnlink} className="text-red-400 hover:underline">quitar</button>
@@ -72,9 +73,9 @@ export function LinkPicker({
               <button
                 key={`${r.type}-${r.id}`}
                 onClick={() => link(r)}
-                className="block w-full truncate px-2 py-1.5 text-left text-xs text-zinc-300 hover:bg-panel2"
+                className="flex w-full items-center gap-1.5 truncate px-2 py-1.5 text-left text-xs text-zinc-300 hover:bg-panel2"
               >
-                {r.type === "script" ? "📰" : "🕵️"} {r.title}
+                {r.type === "script" ? <Newspaper size={12} /> : <Radar size={12} />} {r.title}
               </button>
             ))
           )}

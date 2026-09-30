@@ -1,3 +1,5 @@
+import { Clapperboard, Mic, type LucideIcon } from "lucide-react";
+
 // Vive aquí (no en drive.ts) para que las páginas cliente puedan importarlo
 // sin arrastrar drive.ts al bundle del navegador (drive.ts importa ./db, que
 // usa node:sqlite y solo puede correr en el servidor).
@@ -11,8 +13,8 @@ export const DRIVE_STATUS_LABEL: Record<string, string> = {
   subido: "Subido",
 };
 
-export function driveKindIcon(kind: string): string {
-  return kind === "video" ? "🎬" : "🎙️";
+export function driveKindIcon(kind: string): LucideIcon {
+  return kind === "video" ? Clapperboard : Mic;
 }
 
 export function fmtBytes(n: number): string {

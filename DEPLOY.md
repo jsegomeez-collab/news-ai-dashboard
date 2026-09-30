@@ -1,4 +1,4 @@
-# 🚀 Desplegar AI Actualidad en la red
+# 🚀 Desplegar AutoGuiones PRO en la red
 
 Esta app necesita un host con **servidor Node persistente** (no serverless),
 porque usa **SQLite en disco** y un **worker 24/7**. Los que mejor encajan:
@@ -23,7 +23,7 @@ Con Git instalado, desde la carpeta del proyecto:
 ```bash
 git init
 git add .
-git commit -m "AI Actualidad"
+git commit -m "AutoGuiones PRO"
 ```
 
 Crea un repo vacío en GitHub y súbelo:

@@ -1,5 +1,7 @@
-// Constantes de UI compartidas entre /competencia y /adaptados.
-export const PLATFORM_ICON: Record<string, string> = { tiktok: "🎵", instagram: "📸", youtube: "▶️" };
+// Constantes de UI compartidas entre /competencia y /adaptados. El icono de
+// cada plataforma vive en PlatformIcon.tsx (insignia de marca real, no
+// emoji) — aquí solo queda la etiqueta de texto, para <option> nativos que
+// no pueden llevar SVG dentro.
 export const PLATFORM_LABEL: Record<string, string> = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" };
 
 // Defensa en profundidad para cualquier <a href={...}> con una URL guardada

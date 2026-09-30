@@ -1,10 +1,27 @@
 "use client";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Nav } from "@/components/Nav";
+import { Sidebar, MobileNav } from "@/components/Nav";
 import { StatusBar } from "@/components/StatusBar";
 
 type User = { id: number; email: string; name: string | null; isAdmin?: boolean };
+
+// Marca: loseta blanca con "AG" (como el logo sobre blanco de la landing) +
+// nombre en Inter 900 con "PRO" en azul claro.
+export function Brand() {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-[13px] font-black tracking-tight text-ink shadow-[0_0_18px_rgba(0,112,248,0.6)]">
+        AG
+      </span>
+      <div className="leading-none">
+        <div className="text-[1.05rem] font-black tracking-[-0.03em] text-white">
+          AutoGuiones <span className="text-brand2">PRO</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -48,30 +65,56 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
   if (!user) return null; // redirigiendo a /login
 
-  return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
-      <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-white">
-            AI <span className="text-brand">Actualidad</span>
-          </h1>
-          <p className="text-sm text-zinc-400">IA para negocios digitales · noticias + guiones</p>
+  const userBox = (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand2 to-brand text-xs font-black text-white shadow-[0_0_14px_rgba(0,112,248,0.5)]">
+        {(user.name || user.email).slice(0, 1).toUpperCase()}
+      </span>
+      <div className="min-w-0 flex-1 leading-tight">
+        <div className="truncate text-[0.85rem] font-semibold text-zinc-100" title={user.email}>
+          {user.name || user.email}
         </div>
-        <div className="flex items-center gap-3 text-sm">
-          {user.isAdmin && (
-            <span className="rounded bg-brand/20 px-2 py-0.5 text-xs font-semibold text-brand">ADMIN</span>
-          )}
-          <span className="text-zinc-400">{user.name || user.email}</span>
-          <button onClick={logout} className="rounded border border-edge px-3 py-1 text-zinc-300 hover:bg-panel">
-            Salir
-          </button>
-        </div>
-      </header>
-      <div className="mb-4">
-        <StatusBar />
+        {user.isAdmin && <div className="eyebrow eyebrow--plain text-[0.55rem]">admin</div>}
       </div>
-      <Nav isAdmin={user.isAdmin} />
-      <main className="mt-6">{children}</main>
+      <button
+        onClick={logout}
+        className="rounded-full border border-edge px-2.5 py-1 text-[11px] font-semibold text-zinc-300 hover:border-edge2 hover:text-white"
+      >
+        Salir
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="mx-auto flex max-w-[1400px] gap-6 px-4 py-4 md:px-6 md:py-6">
+      {/* Barra lateral (escritorio): navegación agrupada por fase del flujo, en una tarjeta de cristal. */}
+      <aside className="hidden w-60 shrink-0 md:block">
+        <div className="sticky top-6 flex max-h-[calc(100vh-3rem)] flex-col rounded-card-lg border border-edge bg-panel p-4 shadow-neon">
+          <div className="mb-6 px-1">
+            <Brand />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <Sidebar isAdmin={user.isAdmin} />
+          </div>
+          <div className="mt-5 border-t border-edge/70 pt-4">{userBox}</div>
+        </div>
+      </aside>
+
+      <div className="min-w-0 flex-1">
+        {/* Cabecera móvil: marca + usuario, y debajo la tira de navegación. */}
+        <div className="mb-4 md:hidden">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <Brand />
+            {userBox}
+          </div>
+          <MobileNav isAdmin={user.isAdmin} />
+        </div>
+
+        <div className="mb-5">
+          <StatusBar />
+        </div>
+        <main className="rise">{children}</main>
+      </div>
     </div>
   );
 }

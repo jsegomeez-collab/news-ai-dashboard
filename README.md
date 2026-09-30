@@ -1,4 +1,4 @@
-# AI Actualidad — Dashboard de noticias IA + motor de guiones
+# AutoGuiones PRO — Dashboard de noticias IA + motor de guiones
 
 Dashboard local para una marca personal de **IA aplicada a negocios digitales**.
 Hace dos cosas, sin que tengas que tocar nada:

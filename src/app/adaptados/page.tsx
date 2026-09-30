@@ -2,7 +2,9 @@
 import { useEffect, useRef, useState } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
 import type { CompetitorAccount, CompetitorScriptItem } from "@/lib/competitor";
-import { PLATFORM_ICON, PLATFORM_LABEL, fmt, safeHref } from "@/lib/competitorUi";
+import { PLATFORM_LABEL, fmt, safeHref } from "@/lib/competitorUi";
+import { PlatformIcon, PlatformHandle } from "@/components/PlatformIcon";
+import { Pagination } from "@/components/Pagination";
 import { buildScriptText } from "@/lib/scriptText";
 import { PipelineStepper } from "@/components/PipelineStepper";
 import { Modal } from "@/components/Modal";
@@ -13,6 +15,8 @@ import { SCRIPT_STATUSES, STATUS_LABEL } from "@/lib/status";
 import { HeygenRenderStatus } from "@/components/HeygenRenderStatus";
 import { HeygenBulkBar } from "@/components/HeygenBulkBar";
 import { HeygenProcessButton } from "@/components/HeygenProcessButton";
+import { PageHeader } from "@/components/PageHeader";
+import { Mic, CalendarDays, Link2, Eye, MessageCircle, Flame, Copy, Check, FolderOpen } from "lucide-react";
 
 const PAGE_SIZE = 20;
 
@@ -31,8 +35,8 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
 
 const FORMAT_OPTIONS: { value: string; label: string }[] = [
   { value: "", label: "Todos los formatos" },
-  { value: "reel", label: "📱 Reel" },
-  { value: "youtube", label: "▶️ YouTube" },
+  { value: "reel", label: "Reel" },
+  { value: "youtube", label: "YouTube" },
 ];
 
 type Media = Pick<CompetitorScriptItem, "media_path" | "media_original_name" | "media_mime" | "media_size">;
@@ -78,8 +82,8 @@ function MediaUpload({ scriptId, initial }: { scriptId: number; initial: Media }
   return (
     <div className="rounded-lg border border-edge/60 bg-ink/50 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-zinc-400">
-          🎙️ Tu audio/video leyendo el guion <span className="text-zinc-600">(para que el editor lo clone)</span>
+        <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+          <Mic size={13} /> Tu audio/video leyendo el guion <span className="text-zinc-600">(para que el editor lo clone)</span>
         </span>
         {hasMedia && (
           <button onClick={remove} className="text-xs text-red-400 hover:underline">
@@ -176,7 +180,7 @@ function CalendarModal({ s, onClose }: { s: CompetitorScriptItem; onClose: () =>
   }
 
   return (
-    <Modal title="📅 Añadir al calendario" onClose={onClose}>
+    <Modal title={<><CalendarDays size={17} className="text-brand2" /> Añadir al calendario</>} onClose={onClose}>
       {loading ? (
         <p className="text-sm text-zinc-500">Cargando…</p>
       ) : (
@@ -261,7 +265,7 @@ function ShareModal({ ids, onClose }: { ids: number[]; onClose: () => void }) {
   }
 
   return (
-    <Modal title="🔗 Compartir guiones" onClose={onClose}>
+    <Modal title={<><Link2 size={17} className="text-brand2" /> Compartir guiones</>} onClose={onClose}>
       <div className="space-y-4">
         {!url ? (
           <>
@@ -357,19 +361,19 @@ function ScriptDoc({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={s.thumbnail_url} alt="" className="h-28 w-20 rounded-lg object-cover sm:h-32 sm:w-24" />
           ) : (
-            <div className="flex h-28 w-20 items-center justify-center rounded-lg bg-ink text-3xl sm:h-32 sm:w-24">
-              {PLATFORM_ICON[s.account_platform]}
+            <div className="flex h-28 w-20 items-center justify-center rounded-lg bg-ink sm:h-32 sm:w-24">
+              <PlatformIcon platform={s.account_platform} size={30} />
             </div>
           )}
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-            <span>{PLATFORM_ICON[s.account_platform]} @{s.account_handle}</span>
+            <PlatformHandle platform={s.account_platform} handle={s.account_handle} />
             <span className="ml-auto flex items-center gap-3">
-              {s.views !== null && <span>👁 {fmt(s.views)}</span>}
-              {s.comments !== null && <span>💬 {fmt(s.comments)}</span>}
-              {s.viral_score !== null && <span>🔥 {s.viral_score}/100</span>}
+              {s.views !== null && <span className="flex items-center gap-1"><Eye size={12} /> {fmt(s.views)}</span>}
+              {s.comments !== null && <span className="flex items-center gap-1"><MessageCircle size={12} /> {fmt(s.comments)}</span>}
+              {s.viral_score !== null && <span className="flex items-center gap-1"><Flame size={12} /> {s.viral_score}/100</span>}
             </span>
           </div>
 
@@ -405,16 +409,16 @@ function ScriptDoc({
             {expanded && (
               <button
                 onClick={copy}
-                className="rounded border border-edge px-2.5 py-1 text-xs text-zinc-400 hover:border-brand hover:text-brand"
+                className="flex items-center gap-1.5 rounded border border-edge px-2.5 py-1 text-xs text-zinc-400 hover:border-brand hover:text-brand"
               >
-                {copied ? "✓ Copiado" : "📋 Copiar guion"}
+                {copied ? <><Check size={13} /> Copiado</> : <><Copy size={13} /> Copiar guion</>}
               </button>
             )}
             <button
               onClick={() => setShowCalendar(true)}
-              className="rounded border border-edge px-2.5 py-1 text-xs text-zinc-400 hover:border-brand hover:text-brand"
+              className="flex items-center gap-1.5 rounded border border-edge px-2.5 py-1 text-xs text-zinc-400 hover:border-brand hover:text-brand"
             >
-              📅 Calendario
+              <CalendarDays size={13} /> Calendario
             </button>
             <span className="ml-auto text-xs text-zinc-600">{timeAgo(s.created_at)}</span>
           </div>
@@ -511,13 +515,11 @@ export default function AdaptadosPage() {
 
   return (
     <div>
+      <PageHeader
+        title="Guiones adaptados"
+        subtitle="Guiones creados a partir de vídeos virales de tu competencia, listos para grabar o convertir en vídeo con tu avatar."
+      />
       <HeygenProcessButton />
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold text-white">Guiones adaptados</h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Guiones creados a partir de videos virales de tu competencia, listos para grabar.
-        </p>
-      </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <select value={sort} onChange={(e) => setSort(e.target.value)} className={selectClass()}>
@@ -531,8 +533,9 @@ export default function AdaptadosPage() {
           className={selectClass()}
         >
           <option value="">Todas las cuentas</option>
+          {/* <option> nativo: no admite SVG, se queda en texto plano. */}
           {accounts.map((a) => (
-            <option key={a.id} value={a.id}>{PLATFORM_ICON[a.platform]} @{a.handle}</option>
+            <option key={a.id} value={a.id}>[{PLATFORM_LABEL[a.platform] ?? a.platform}] @{a.handle}</option>
           ))}
         </select>
         <select value={formatFilter} onChange={(e) => setFormatFilter(e.target.value)} className={selectClass()}>
@@ -570,9 +573,9 @@ export default function AdaptadosPage() {
           <span className="text-sm font-medium text-zinc-200">{selected.length} seleccionados</span>
           <button
             onClick={() => setShowShare(true)}
-            className="rounded bg-brand px-3 py-1 text-xs font-medium text-white hover:bg-brand/90"
+            className="flex items-center gap-1.5 rounded bg-brand px-3 py-1 text-xs font-medium text-white hover:bg-brand/90"
           >
-            🔗 Generar link para compartir
+            <Link2 size={13} /> Generar link para compartir
           </button>
           <button onClick={() => setSelected([])} className="ml-auto text-xs text-zinc-400 hover:text-zinc-200">
             Cancelar selección
@@ -589,7 +592,7 @@ export default function AdaptadosPage() {
 
       {scripts.length === 0 ? (
         <div className="rounded-lg border border-dashed border-edge p-10 text-center text-zinc-500">
-          <p className="mb-2 text-2xl">🗂️</p>
+          <FolderOpen size={32} className="mx-auto mb-2 text-zinc-600" />
           <p className="text-sm">
             {accountFilter || formatFilter || statusFilter ? "No hay guiones con este filtro." : "Aún no hay guiones adaptados."}
           </p>
@@ -605,25 +608,7 @@ export default function AdaptadosPage() {
         </div>
       )}
 
-      {pages > 1 && (
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
-          >
-            ← Anterior
-          </button>
-          <span className="text-sm text-zinc-400">Página {page} de {pages}</span>
-          <button
-            onClick={() => setPage((p) => Math.min(pages, p + 1))}
-            disabled={page >= pages}
-            className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
-          >
-            Siguiente →
-          </button>
-        </div>
-      )}
+      <Pagination page={page} pages={pages} onChange={setPage} />
 
       {showShare && (
         <ShareModal

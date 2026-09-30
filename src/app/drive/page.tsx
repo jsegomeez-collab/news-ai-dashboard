@@ -1,10 +1,14 @@
 "use client";
+import { PageHeader } from "@/components/PageHeader";
 import { useRef, useState } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
 import type { DriveFolder, DriveFile } from "@/lib/drive";
 import { DRIVE_STATUSES, DRIVE_STATUS_LABEL, driveKindIcon, fmtBytes } from "@/lib/driveUi";
 import { StatusPill } from "@/components/StatusPill";
 import { LinkPicker, type LinkTargetLite } from "@/components/LinkPicker";
+import {
+  HardDrive, CalendarDays, ChevronUp, ChevronDown, Download, Trash2, FolderPlus, Upload, Folder,
+} from "lucide-react";
 
 function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) {
   const [expanded, setExpanded] = useState(false);
@@ -60,7 +64,7 @@ function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) 
   return (
     <div className={`rounded-xl border bg-panel transition ${expanded ? "border-brand/40" : "border-edge hover:border-edge"}`}>
       <button onClick={() => setExpanded((e) => !e)} className="flex w-full items-center gap-3 p-3.5 text-left">
-        <span className="text-2xl">{driveKindIcon(file.kind)}</span>
+        {(() => { const Icon = driveKindIcon(file.kind); return <Icon size={22} className="shrink-0 text-brand2" />; })()}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">{file.original_name}</p>
           <p className="text-xs text-zinc-500">
@@ -68,9 +72,13 @@ function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) 
             {file.linked_title ? ` · vinculado a "${file.linked_title}"` : ""}
           </p>
         </div>
-        {file.scheduled_date && <span className="hidden shrink-0 text-xs text-zinc-500 sm:inline">📅 {file.scheduled_date}</span>}
+        {file.scheduled_date && (
+          <span className="hidden shrink-0 items-center gap-1 text-xs text-zinc-500 sm:flex">
+            <CalendarDays size={12} /> {file.scheduled_date}
+          </span>
+        )}
         <StatusPill status={file.status} size="sm" />
-        <span className="shrink-0 text-xs text-zinc-500">{expanded ? "▲" : "▼"}</span>
+        {expanded ? <ChevronUp size={14} className="shrink-0 text-zinc-500" /> : <ChevronDown size={14} className="shrink-0 text-zinc-500" />}
       </button>
 
       {expanded && (
@@ -117,11 +125,11 @@ function FileRow({ file, onChange }: { file: DriveFile; onChange: () => void }) 
           </div>
 
           <div className="flex items-center justify-between border-t border-edge/40 pt-3">
-            <a href={url} download={file.original_name} className="text-xs text-brand hover:underline">
-              ⬇ descargar
+            <a href={url} download={file.original_name} className="flex items-center gap-1 text-xs text-brand hover:underline">
+              <Download size={13} /> descargar
             </a>
-            <button onClick={remove} className="text-xs text-red-400 hover:underline">
-              🗑 eliminar
+            <button onClick={remove} className="flex items-center gap-1 text-xs text-red-400 hover:underline">
+              <Trash2 size={13} /> eliminar
             </button>
           </div>
         </div>
@@ -198,19 +206,17 @@ export default function DrivePage() {
 
   return (
     <div>
-      <div className="mb-5">
-        <h2 className="text-lg font-semibold text-white">🗄️ Drive</h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Tus audios y videos grabados, organizados por carpetas y vinculados a cada guion.
-        </p>
-      </div>
+      <PageHeader
+        title="Drive"
+        subtitle="Tus audios, vídeos grabados y los vídeos generados con avatar, organizados por carpetas y vinculados a cada guion."
+      />
 
       <div className="mb-4 flex flex-wrap items-center gap-1 text-sm">
         <button
           onClick={() => setFolderId(null)}
-          className={`rounded-lg px-2.5 py-1 transition ${folderId === null ? "bg-panel2 font-medium text-white" : "text-zinc-400 hover:text-zinc-200"}`}
+          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition ${folderId === null ? "bg-panel2 font-medium text-white" : "text-zinc-400 hover:text-zinc-200"}`}
         >
-          🗄️ Mi Drive
+          <HardDrive size={14} /> Mi Drive
         </button>
         {breadcrumb.map((f) => (
           <span key={f.id} className="flex items-center gap-1">
@@ -228,12 +234,12 @@ export default function DrivePage() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
           onClick={() => setShowNewFolder((v) => !v)}
-          className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200 hover:border-brand"
+          className="flex items-center gap-1.5 rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200 hover:border-brand"
         >
-          📁+ Nueva carpeta
+          <FolderPlus size={15} /> Nueva carpeta
         </button>
-        <label className="cursor-pointer rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
-          {uploading ? "Subiendo…" : "⬆️ Subir audio/video"}
+        <label className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
+          {uploading ? "Subiendo…" : <><Upload size={15} /> Subir audio/video</>}
           <input
             ref={inputRef}
             type="file"
@@ -270,7 +276,7 @@ export default function DrivePage() {
           {folders.map((f) => (
             <div key={f.id} className="group relative rounded-xl border border-edge bg-panel p-3 transition hover:border-brand/40">
               <button onClick={() => setFolderId(f.id)} className="flex w-full flex-col items-center gap-1.5 text-center">
-                <span className="text-3xl">📁</span>
+                <Folder size={28} className="text-brand2" />
                 <span className="w-full truncate text-sm text-zinc-200">{f.name}</span>
               </button>
               <div className="mt-1.5 hidden justify-center gap-2 text-xs group-hover:flex">
@@ -284,7 +290,7 @@ export default function DrivePage() {
 
       {files.length === 0 && folders.length === 0 ? (
         <div className="rounded-xl border border-dashed border-edge p-10 text-center text-zinc-500">
-          <p className="mb-2 text-2xl">🗄️</p>
+          <HardDrive size={32} className="mx-auto mb-2 text-zinc-600" />
           <p className="text-sm">Esta carpeta está vacía.</p>
           <p className="mt-1 text-xs text-zinc-600">Sube un audio o video, o crea una subcarpeta.</p>
         </div>

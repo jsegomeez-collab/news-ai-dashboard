@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Brand } from "@/components/AppShell";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -33,17 +34,21 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="w-full max-w-sm rounded-xl border border-edge bg-panel p-6">
-      <h1 className="text-xl font-bold text-white">
-        Crear cuenta en AI <span className="text-brand">Actualidad</span>
+    <div className="rise w-full max-w-md rounded-card-lg border border-edge2/60 bg-panel p-8 shadow-neon-hi">
+      <div className="mb-7">
+        <Brand />
+      </div>
+      <div className="eyebrow mb-2">Nueva cuenta</div>
+      <h1 className="title-glow text-3xl font-black tracking-[-0.03em] text-white">
+        Crea tu <span className="serif-accent text-brand2">cuenta</span>
       </h1>
-      <p className="mb-5 text-sm text-zinc-400">Cada cuenta es privada y usa tu propia clave de Anthropic.</p>
+      <p className="mb-6 mt-2 text-sm text-zinc-400">Cada cuenta es privada y usa tu propia clave de Anthropic.</p>
       <form onSubmit={submit} className="space-y-3">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Nombre (opcional)"
-          className="w-full rounded border border-edge bg-ink p-2.5 text-sm text-zinc-200 outline-none focus:border-brand"
+          className="w-full rounded-xl border border-edge bg-ink p-3 text-sm text-zinc-100 outline-none"
         />
         <input
           type="email"
@@ -51,7 +56,7 @@ export default function RegisterPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email"
-          className="w-full rounded border border-edge bg-ink p-2.5 text-sm text-zinc-200 outline-none focus:border-brand"
+          className="w-full rounded-xl border border-edge bg-ink p-3 text-sm text-zinc-100 outline-none"
         />
         <input
           type="password"
@@ -60,19 +65,19 @@ export default function RegisterPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Contraseña (mín. 8 caracteres)"
-          className="w-full rounded border border-edge bg-ink p-2.5 text-sm text-zinc-200 outline-none focus:border-brand"
+          className="w-full rounded-xl border border-edge bg-ink p-3 text-sm text-zinc-100 outline-none"
         />
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-live">{error}</p>}
         <button
           disabled={loading}
-          className="w-full rounded bg-brand py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+          className="w-full rounded-xl bg-brand py-3 text-sm font-extrabold uppercase tracking-wide text-white disabled:opacity-50"
         >
           {loading ? "Creando…" : "Crear cuenta"}
         </button>
       </form>
-      <p className="mt-4 text-center text-sm text-zinc-500">
+      <p className="mt-5 text-center text-sm text-zinc-500">
         ¿Ya tienes cuenta?{" "}
-        <Link href="/login" className="text-brand hover:underline">
+        <Link href="/login" className="font-semibold text-brand2 hover:underline">
           Entrar
         </Link>
       </p>

@@ -68,7 +68,7 @@ process.on("unhandledRejection", (e) => {
 });
 
 async function main(): Promise<void> {
-  console.log("=== Worker AI Actualidad (multiusuario) ===");
+  console.log("=== Worker AutoGuiones PRO (multiusuario) ===");
   console.log(`Cron: ${POLL_CRON} · las noticias se traen siempre; cada usuario clasifica/genera con su clave.`);
 
   try {

@@ -21,11 +21,13 @@
     "@remotion/cli": "^4.0.526",
     "@remotion/renderer": "^4.0.526",
     "dotenv": "^16.4.7",
+    "lucide-react": "^1.49.0",
     "next": "^15.5.19",
     "node-cron": "^3.0.3",
     "openai": "^6.45.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
+    "react-icons": "^5.7.0",
     "remotion": "^4.0.526",
     "rss-parser": "^3.13.0"
   },

@@ -12,6 +12,10 @@ import { buildScriptText } from "@/lib/scriptText";
 import { HeygenRenderStatus } from "@/components/HeygenRenderStatus";
 import { HeygenBulkBar } from "@/components/HeygenBulkBar";
 import { HeygenProcessButton } from "@/components/HeygenProcessButton";
+import { PageHeader } from "@/components/PageHeader";
+import {
+  Eye, Heart, MessageCircle, Repeat2, UserPlus, Flame, Trophy, AlertTriangle, MoveHorizontal, type LucideIcon,
+} from "lucide-react";
 
 function scoreColor(s: number | null): string {
   if (s === null) return "bg-zinc-700 text-zinc-300";
@@ -58,21 +62,21 @@ function MetricsForm({ s, onSaved }: { s: ScriptItem; onSaved: () => void }) {
     }
   }
 
-  const fields: [string, keyof typeof m, string][] = [
-    ["👁 Views", "views", "views"],
-    ["❤️ Likes", "likes", "likes"],
-    ["💬 Coment.", "comments", "comentarios"],
-    ["🔁 Comp.", "shares", "compartidos"],
-    ["➕ Seguidores", "new_followers", "nuevos seguidores"],
+  const fields: [LucideIcon, string, keyof typeof m, string][] = [
+    [Eye, "Views", "views", "views"],
+    [Heart, "Likes", "likes", "likes"],
+    [MessageCircle, "Coment.", "comments", "comentarios"],
+    [Repeat2, "Comp.", "shares", "compartidos"],
+    [UserPlus, "Seguidores", "new_followers", "nuevos seguidores"],
   ];
 
   return (
     <div className="rounded bg-ink/60 p-3">
       <div className="mb-2 text-xs uppercase text-zinc-500">Resultados reales (rellénalos tras publicar)</div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        {fields.map(([label, key, ph]) => (
+        {fields.map(([Icon, label, key, ph]) => (
           <label key={key} className="text-xs text-zinc-400">
-            {label}
+            <span className="flex items-center gap-1"><Icon size={12} /> {label}</span>
             <input
               inputMode="numeric"
               value={String(m[key])}
@@ -141,7 +145,7 @@ function ScriptCard({
               <span className="rounded bg-edge px-1.5 py-0.5 uppercase text-zinc-300">
                 {s.format === "reel" ? "IG/Reel" : "YouTube"}
               </span>
-              {eng > 0 && <span className="text-emerald-400">🔥 {eng.toLocaleString()}</span>}
+              {eng > 0 && <span className="flex items-center gap-1 text-emerald-400"><Flame size={12} /> {eng.toLocaleString()}</span>}
             </div>
             <h3 className="mt-1 truncate font-medium text-white" title={s.title ?? ""}>
               {s.title || "(sin título)"}
@@ -187,7 +191,7 @@ function ScriptCard({
                 Crítica del director · tono {s.tone_match?.toFixed(1) ?? "—"}/10
               </div>
               {s.strengths && <p className="mt-1 text-emerald-300">✓ {s.strengths}</p>}
-              {s.weaknesses && <p className="mt-1 text-amber-300">⚠ {s.weaknesses}</p>}
+              {s.weaknesses && <p className="mt-1 flex items-center gap-1 text-amber-300"><AlertTriangle size={13} /> {s.weaknesses}</p>}
               {s.improvements && <p className="mt-1 text-brand2">→ {s.improvements}</p>}
             </div>
           )}
@@ -231,6 +235,10 @@ export default function GuionesPage() {
 
   return (
     <div>
+      <PageHeader
+        title="Guiones de noticias"
+        subtitle="Pipeline de guiones generados a partir de las noticias. Muévelos de estado, míralos completos y marca los que quieras convertir en vídeo."
+      />
       <HeygenProcessButton />
       <HeygenBulkBar
         sourceType="script"
@@ -253,7 +261,7 @@ export default function GuionesPage() {
             view === "top" ? "bg-brand text-white" : "bg-panel text-zinc-300"
           }`}
         >
-          🏆 Mejores resultados
+          <span className="flex items-center gap-1.5"><Trophy size={14} /> Mejores resultados</span>
         </button>
         <span className="ml-auto text-xs text-zinc-500">
           {loading ? "cargando…" : `${items.length} guiones`} · autorefresco 30s
@@ -266,7 +274,7 @@ export default function GuionesPage() {
               necesarios) — sin este aviso + degradado, nada indica que hay
               más estados fuera de pantalla a la derecha (en móvil esto
               cortaba la 2ª columna a la mitad sin ninguna pista). */}
-          <p className="mb-2 text-xs text-zinc-600">⟷ desliza para ver el resto de estados</p>
+          <p className="mb-2 flex items-center gap-1.5 text-xs text-zinc-600"><MoveHorizontal size={13} /> desliza para ver el resto de estados</p>
           <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4">
             {SCRIPT_STATUSES.map((st) => {
               const col = byStatus(st);

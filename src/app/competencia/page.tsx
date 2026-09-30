@@ -2,9 +2,35 @@
 import { useState, useCallback } from "react";
 import { usePoll, timeAgo } from "@/components/usePoll";
 import type { CompetitorAccount, CompetitorVideo } from "@/lib/competitor";
-import { PLATFORM_ICON, fmt, safeHref } from "@/lib/competitorUi";
+import { PLATFORM_LABEL, fmt, safeHref } from "@/lib/competitorUi";
+import { PlatformIcon, PlatformHandle } from "@/components/PlatformIcon";
+import { PageHeader } from "@/components/PageHeader";
+import { Pagination } from "@/components/Pagination";
+import {
+  Eye, Heart, MessageCircle, Link2, Search, Film, RefreshCw, Flame, Lightbulb, Zap,
+  PenLine, Mic, Trash2, Copy, Radar, Video, Settings, Bot, Clock, type LucideIcon,
+} from "lucide-react";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+// Fila de campo numérico con icono, usada por los 3 formularios de umbrales
+// (añadir cuenta, escanear perfil, editar cuenta) — antes cada uno llevaba el
+// emoji pegado al texto de la etiqueta.
+type ThresholdField = [LucideIcon, string, number, (v: number) => void, number, number, number];
+function ThresholdInputs({ fields }: { fields: ThresholdField[] }) {
+  return (
+    <>
+      {fields.map(([Icon, label, val, setter, min, max, step]) => (
+        <label key={label} className="text-xs text-zinc-400">
+          <span className="mb-1 flex items-center gap-1.5"><Icon size={12} className="text-zinc-500" />{label}</span>
+          <input type="number" min={min} max={max} step={step} value={val}
+            onChange={(e) => setter(Number(e.target.value) || 0)}
+            className="w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
+        </label>
+      ))}
+    </>
+  );
+}
 
 const PLATFORMS: { id: string; label: string; placeholder: string; urlHint: string }[] = [
   { id: "tiktok",    label: "TikTok",    placeholder: "@creador",   urlHint: "https://www.tiktok.com/@usuario" },
@@ -67,8 +93,8 @@ function AddAccountForm({ onAdded }: { onAdded: () => void }) {
       <div className="flex gap-2">
         {PLATFORMS.map((p) => (
           <button key={p.id} type="button" onClick={() => setPlatform(p.id)}
-            className={`flex-1 rounded border px-3 py-2 text-sm font-medium transition ${platform === p.id ? "border-brand bg-brand/20 text-white" : "border-edge bg-ink text-zinc-400 hover:text-zinc-200"}`}>
-            {PLATFORM_ICON[p.id]} {p.label}
+            className={`flex flex-1 items-center justify-center gap-2 rounded border px-3 py-2 text-sm font-medium transition ${platform === p.id ? "border-brand bg-brand/20 text-white" : "border-edge bg-ink text-zinc-400 hover:text-zinc-200"}`}>
+            <PlatformIcon platform={p.id} size={16} /> {p.label}
           </button>
         ))}
       </div>
@@ -89,18 +115,13 @@ function AddAccountForm({ onAdded }: { onAdded: () => void }) {
       <div>
         <p className="mb-2 text-xs font-semibold uppercase text-zinc-500">Umbrales mínimos para analizar un video</p>
         <div className="grid grid-cols-3 gap-3">
-          {([
-            ["👁 Vistas mín.", minViews, setMinViews, 0, 5_000_000, 10000] as const,
-            ["❤️ Likes mín.", minLikes, setMinLikes, 0, 500_000, 1000] as const,
-            ["💬 Comentarios mín.", minComments, setMinComments, 0, 50_000, 100] as const,
-          ] as [string, number, (v: number) => void, number, number, number][]).map(([label, val, setter, min, max, step]) => (
-            <label key={label} className="text-xs text-zinc-400">
-              {label}
-              <input type="number" min={min} max={max} step={step} value={val}
-                onChange={(e) => setter(Number(e.target.value) || 0)}
-                className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
-            </label>
-          ))}
+          <ThresholdInputs
+            fields={[
+              [Eye, "Vistas mín.", minViews, setMinViews, 0, 5_000_000, 10000],
+              [Heart, "Likes mín.", minLikes, setMinLikes, 0, 500_000, 1000],
+              [MessageCircle, "Comentarios mín.", minComments, setMinComments, 0, 50_000, 100],
+            ]}
+          />
         </div>
         <p className="mt-1 text-xs text-zinc-600">Solo se analizan videos que superen TODOS los umbrales configurados.</p>
       </div>
@@ -174,7 +195,7 @@ function AddManualLinksForm({ onAdded }: { onAdded: () => void }) {
 
   return (
     <form onSubmit={submit} className="rounded-lg border border-edge bg-panel p-4 space-y-3">
-      <h3 className="text-sm font-semibold text-white">🔗 Añadir vídeos por enlace</h3>
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-white"><Link2 size={16} className="text-brand2" /> Añadir vídeos por enlace</h3>
       <p className="text-xs text-zinc-500">
         Pega uno o varios enlaces de Instagram/TikTok/YouTube (uno por línea, o separados por espacios) — se detectan
         solos y van directos a transcribir y adaptar, sin esperar al scrapeo de la cuenta.
@@ -239,7 +260,7 @@ function ScanProfileForm({ onScanned }: { onScanned: () => void }) {
   return (
     <form onSubmit={submit} className="rounded-lg border border-edge bg-panel p-4 space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-white">🔍 Escanear un perfil ahora (sin guardarlo)</h3>
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-white"><Search size={16} className="text-brand2" /> Escanear un perfil ahora (sin guardarlo)</h3>
         <p className="mt-1 text-xs text-zinc-500">
           Un vistazo puntual con tus propios filtros — no se queda monitorizándose para siempre como "Añadir cuenta a espiar".
         </p>
@@ -248,8 +269,8 @@ function ScanProfileForm({ onScanned }: { onScanned: () => void }) {
       <div className="flex gap-2">
         {PLATFORMS.map((p) => (
           <button key={p.id} type="button" onClick={() => setPlatform(p.id)}
-            className={`flex-1 rounded border px-3 py-2 text-sm font-medium transition ${platform === p.id ? "border-brand bg-brand/20 text-white" : "border-edge bg-ink text-zinc-400 hover:text-zinc-200"}`}>
-            {PLATFORM_ICON[p.id]} {p.label}
+            className={`flex flex-1 items-center justify-center gap-2 rounded border px-3 py-2 text-sm font-medium transition ${platform === p.id ? "border-brand bg-brand/20 text-white" : "border-edge bg-ink text-zinc-400 hover:text-zinc-200"}`}>
+            <PlatformIcon platform={p.id} size={16} /> {p.label}
           </button>
         ))}
       </div>
@@ -270,18 +291,13 @@ function ScanProfileForm({ onScanned }: { onScanned: () => void }) {
       <div>
         <p className="mb-2 text-xs font-semibold uppercase text-zinc-500">Umbrales mínimos (solo para este escaneo)</p>
         <div className="grid grid-cols-3 gap-3">
-          {([
-            ["👁 Vistas mín.", minViews, setMinViews, 0, 5_000_000, 10000] as const,
-            ["❤️ Likes mín.", minLikes, setMinLikes, 0, 500_000, 1000] as const,
-            ["💬 Comentarios mín.", minComments, setMinComments, 0, 50_000, 100] as const,
-          ] as [string, number, (v: number) => void, number, number, number][]).map(([label, val, setter, min, max, step]) => (
-            <label key={label} className="text-xs text-zinc-400">
-              {label}
-              <input type="number" min={min} max={max} step={step} value={val}
-                onChange={(e) => setter(Number(e.target.value) || 0)}
-                className="mt-1 w-full rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
-            </label>
-          ))}
+          <ThresholdInputs
+            fields={[
+              [Eye, "Vistas mín.", minViews, setMinViews, 0, 5_000_000, 10000],
+              [Heart, "Likes mín.", minLikes, setMinLikes, 0, 500_000, 1000],
+              [MessageCircle, "Comentarios mín.", minComments, setMinComments, 0, 50_000, 100],
+            ]}
+          />
         </div>
       </div>
 
@@ -292,8 +308,8 @@ function ScanProfileForm({ onScanned }: { onScanned: () => void }) {
             className="mt-1 w-24 rounded border border-edge bg-ink p-2 text-sm text-zinc-200 outline-none focus:border-brand" />
         </label>
         <button type="submit" disabled={scanning}
-          className="rounded bg-brand2 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-          {scanning ? "Escaneando…" : "🔍 Escanear ahora"}
+          className="inline-flex items-center gap-1.5 rounded bg-brand2 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          {scanning ? "Escaneando…" : <><Search size={14} />Escanear ahora</>}
         </button>
         {msg && <span className="text-xs text-zinc-400">{msg}</span>}
       </div>
@@ -341,7 +357,7 @@ function AccountCard({ account, onChanged }: { account: CompetitorAccount; onCha
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-lg">{PLATFORM_ICON[account.platform]}</span>
+            <PlatformIcon platform={account.platform} size={18} />
             <span className="font-semibold text-white">@{account.handle}</span>
             {account.display_name && <span className="text-xs text-zinc-500">{account.display_name}</span>}
           </div>
@@ -362,30 +378,32 @@ function AccountCard({ account, onChanged }: { account: CompetitorAccount; onCha
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
-        <span>👁 ≥ {fmt(account.min_views)} vistas</span>
-        <span>❤️ ≥ {fmt(account.min_likes)} likes</span>
-        <span>💬 ≥ {fmt(account.min_comments)} coment.</span>
-        <span>📼 últimos {account.scan_limit}</span>
-        <span>🔄 Cada {account.check_interval_hours}h</span>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+        <span className="inline-flex items-center gap-1"><Eye size={12} />≥ {fmt(account.min_views)} vistas</span>
+        <span className="inline-flex items-center gap-1"><Heart size={12} />≥ {fmt(account.min_likes)} likes</span>
+        <span className="inline-flex items-center gap-1"><MessageCircle size={12} />≥ {fmt(account.min_comments)} coment.</span>
+        <span className="inline-flex items-center gap-1"><Film size={12} />últimos {account.scan_limit}</span>
+        <span className="inline-flex items-center gap-1"><RefreshCw size={12} />cada {account.check_interval_hours}h</span>
         {account.last_checked_at && <span>Última revisión: {timeAgo(account.last_checked_at)}</span>}
       </div>
 
       {editing && (
         <div className="mt-4 border-t border-edge/60 pt-4 space-y-3">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            {([
-              ["👁 Vistas mín.", minV, setMinV, 0, 5_000_000, 10000] as const,
-              ["❤️ Likes mín.", minL, setMinL, 0, 500_000, 1000] as const,
-              ["💬 Coment. mín.", minC, setMinC, 0, 50_000, 100] as const,
-              ["📼 Vídeos a revisar", scanLim, setScanLim, 1, 100, 1] as const,
-              ["🔄 Intervalo (h)", intH, setIntH, 1, 168, 1] as const,
-            ] as [string, number, (v: number) => void, number, number, number][]).map(([label, val, setter, min, max, step]) => (
+            {(
+              [
+                [Eye, "Vistas mín.", minV, setMinV, 0, 5_000_000, 10000],
+                [Heart, "Likes mín.", minL, setMinL, 0, 500_000, 1000],
+                [MessageCircle, "Coment. mín.", minC, setMinC, 0, 50_000, 100],
+                [Film, "Vídeos a revisar", scanLim, setScanLim, 1, 100, 1],
+                [RefreshCw, "Intervalo (h)", intH, setIntH, 1, 168, 1],
+              ] as ThresholdField[]
+            ).map(([Icon, label, val, setter, min, max, step]) => (
               <label key={label} className="text-xs text-zinc-400">
-                {label}
+                <span className="mb-1 flex items-center gap-1.5"><Icon size={12} className="text-zinc-500" />{label}</span>
                 <input type="number" min={min} max={max} step={step} value={val}
                   onChange={(e) => setter(Number(e.target.value) || 0)}
-                  className="mt-1 w-full rounded border border-edge bg-ink p-1.5 text-sm text-zinc-200 outline-none focus:border-brand" />
+                  className="w-full rounded border border-edge bg-ink p-1.5 text-sm text-zinc-200 outline-none focus:border-brand" />
               </label>
             ))}
           </div>
@@ -445,32 +463,34 @@ function VideoCard({ video, selected, onToggleSelect, onDelete, deleting, onAnal
           </div>
 
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-zinc-500">
-            <span>{PLATFORM_ICON[video.account_platform]} @{video.account_handle}</span>
-            {video.views !== null && <span>👁 {fmt(video.views)}</span>}
-            {video.likes !== null && <span>❤️ {fmt(video.likes)}</span>}
-            {video.comments !== null && <span>💬 {fmt(video.comments)}</span>}
-            {video.duration_sec && <span>⏱ {Math.floor(video.duration_sec / 60)}:{String(video.duration_sec % 60).padStart(2, "0")}</span>}
+            <PlatformHandle platform={video.account_platform} handle={video.account_handle} />
+            {video.views !== null && <span className="inline-flex items-center gap-1"><Eye size={12} />{fmt(video.views)}</span>}
+            {video.likes !== null && <span className="inline-flex items-center gap-1"><Heart size={12} />{fmt(video.likes)}</span>}
+            {video.comments !== null && <span className="inline-flex items-center gap-1"><MessageCircle size={12} />{fmt(video.comments)}</span>}
+            {video.duration_sec && <span className="inline-flex items-center gap-1"><Clock size={12} />{Math.floor(video.duration_sec / 60)}:{String(video.duration_sec % 60).padStart(2, "0")}</span>}
             <span>{timeAgo(video.fetched_at)}</span>
           </div>
 
           {video.status === "done" && video.viral_score !== null && (
             <div className="mt-2 flex items-center gap-3 text-xs">
-              <span className={`rounded px-1.5 py-0.5 font-semibold ${video.viral_score >= 80 ? "bg-emerald-800 text-emerald-200" : video.viral_score >= 60 ? "bg-amber-800 text-amber-200" : "bg-zinc-700 text-zinc-300"}`}>
-                🔥 Viral {video.viral_score}/100
+              <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-semibold ${video.viral_score >= 80 ? "bg-emerald-800 text-emerald-200" : video.viral_score >= 60 ? "bg-amber-800 text-amber-200" : "bg-zinc-700 text-zinc-300"}`}>
+                <Flame size={13} />Viral {video.viral_score}/100
               </span>
               {video.hook_type && <span className="text-zinc-500">{video.hook_type}</span>}
             </div>
           )}
 
           {video.status === "done" && video.winning_idea && (
-            <p className="mt-2 text-sm text-zinc-300">
-              <span className="text-zinc-500">💡 Idea:</span> {video.winning_idea}
+            <p className="mt-2 flex gap-1.5 text-sm text-zinc-300">
+              <Lightbulb size={15} className="mt-0.5 shrink-0 text-zinc-500" />
+              <span><span className="text-zinc-500">Idea:</span> {video.winning_idea}</span>
             </p>
           )}
 
           {video.status === "done" && video.hook && (
-            <p className="mt-1 text-sm text-zinc-400">
-              <span className="text-zinc-500">🎣 Hook:</span> {video.hook}
+            <p className="mt-1 flex gap-1.5 text-sm text-zinc-400">
+              <Zap size={15} className="mt-0.5 shrink-0 text-zinc-500" />
+              <span><span className="text-zinc-500">Hook:</span> {video.hook}</span>
             </p>
           )}
 
@@ -492,33 +512,33 @@ function VideoCard({ video, selected, onToggleSelect, onDelete, deleting, onAnal
             )}
             {video.status === "done" && video.script_count === 0 && (
               <button onClick={() => onAnalyze(video.id)}
-                className="rounded bg-brand2 px-3 py-1 text-xs font-semibold text-white">
-                ✍️ Generar guion adaptado
+                className="inline-flex items-center gap-1.5 rounded bg-brand2 px-3 py-1 text-xs font-semibold text-white">
+                <PenLine size={13} />Generar guion adaptado
               </button>
             )}
             {(video.status === "pending" || video.status === "error") && (
               <button
                 onClick={() => onTranscribe(video.id)}
                 disabled={transcribing === video.id}
-                className="rounded bg-zinc-700 px-3 py-1 text-xs font-semibold text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded bg-zinc-700 px-3 py-1 text-xs font-semibold text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
               >
-                {transcribing === video.id ? "Transcribiendo…" : "🎙 Transcribir ahora"}
+                {transcribing === video.id ? "Transcribiendo…" : <><Mic size={13} />Transcribir ahora</>}
               </button>
             )}
             <button
               onClick={() => onDelete(video.id)}
               disabled={deleting === video.id}
-              className="ml-auto rounded border border-red-900/60 px-2.5 py-1 text-xs text-red-400 hover:bg-red-950/40 disabled:opacity-50"
+              className="ml-auto inline-flex items-center gap-1.5 rounded border border-red-900/60 px-2.5 py-1 text-xs text-red-400 hover:bg-red-950/40 disabled:opacity-50"
             >
-              {deleting === video.id ? "Eliminando…" : "🗑 Eliminar"}
+              {deleting === video.id ? "Eliminando…" : <><Trash2 size={13} />Eliminar</>}
             </button>
           </div>
 
           {expanded && video.transcript && (
             <div className="mt-3 rounded border border-edge/60 bg-ink p-3">
               <div className="mb-2 flex justify-end">
-                <button onClick={copyTranscript} className="rounded border border-edge px-2 py-0.5 text-xs text-zinc-400 hover:border-brand hover:text-brand">
-                  {copied ? "✓ Copiado" : "📋 Copiar transcripción"}
+                <button onClick={copyTranscript} className="inline-flex items-center gap-1.5 rounded border border-edge px-2 py-0.5 text-xs text-zinc-400 hover:border-brand hover:text-brand">
+                  {copied ? "✓ Copiado" : <><Copy size={12} />Copiar transcripción</>}
                 </button>
               </div>
               <p className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-400">{video.transcript}</p>
@@ -533,7 +553,11 @@ function VideoCard({ video, selected, onToggleSelect, onDelete, deleting, onAnal
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-type Tab = "cuentas" | "videos";
+// Cada forma de meter contenido tiene su propia pestaña (antes los tres
+// formularios iban apilados encima de la lista de cuentas y la página se
+// hacía interminable): cuentas monitorizadas, escaneo puntual, enlaces
+// sueltos, y al final los vídeos que resultan de cualquiera de las tres.
+type Tab = "cuentas" | "escanear" | "enlaces" | "videos";
 
 const VIDEOS_PAGE_SIZE = 20;
 
@@ -697,7 +721,7 @@ export default function CompetenciaPage() {
         body: JSON.stringify({ mode }),
       });
       const json = await res.json() as { ok?: boolean; summary?: string; noKey?: boolean; error?: string };
-      if (json.noKey) setAnalyzeMsg("⚠️ Añade tu clave de OpenAI en Ajustes para transcribir.");
+      if (json.noKey) setAnalyzeMsg("Añade tu clave de OpenAI en Ajustes para transcribir.");
       else setAnalyzeMsg(json.summary ?? json.error ?? (json.ok ? "Hecho" : "Error"));
       refreshVideos();
     } finally { setRunning(null); }
@@ -718,13 +742,13 @@ export default function CompetenciaPage() {
     try {
       const res = await fetch(`/api/competitors/videos/${videoId}/adapt`, { method: "POST" });
       const json = await res.json() as { ok?: boolean; generated?: number; error?: string };
-      if (json.ok) { setAnalyzeMsg(`✓ ${json.generated} guion(es) generados — revísalos en 🗂️ Adaptados`); refreshVideos(); }
+      if (json.ok) { setAnalyzeMsg(`✓ ${json.generated} guion(es) generados — revísalos en Adaptados`); refreshVideos(); }
       else setAnalyzeMsg(json.error ?? "Error al generar");
     } finally { setAnalyzing(null); }
   }, [refreshVideos]);
 
   const tabClass = (t: Tab) =>
-    `-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
+    `-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition ${
       tab === t ? "border-brand text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"
     }`;
 
@@ -737,13 +761,23 @@ export default function CompetenciaPage() {
 
   return (
     <div>
+      <PageHeader
+        title="Competencia"
+        subtitle="Vídeos virales de otros creadores que se transcriben y se adaptan a guiones tuyos. Tres formas de traerlos: cuentas monitorizadas, un escaneo puntual o enlaces sueltos."
+      />
       {/* Tabs internos */}
-      <div className="mb-5 flex gap-1 border-b border-edge">
+      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-edge">
         <button onClick={() => setTab("cuentas")} className={tabClass("cuentas")}>
-          🕵️ Cuentas ({accounts.length})
+          <Radar size={15} />Cuentas ({accounts.length})
+        </button>
+        <button onClick={() => setTab("escanear")} className={tabClass("escanear")}>
+          <Search size={15} />Escanear perfil
+        </button>
+        <button onClick={() => setTab("enlaces")} className={tabClass("enlaces")}>
+          <Link2 size={15} />Enlaces sueltos
         </button>
         <button onClick={() => setTab("videos")} className={tabClass("videos")}>
-          📹 Videos ({videosTotal})
+          <Video size={15} />Videos ({videosTotal})
         </button>
       </div>
 
@@ -764,8 +798,8 @@ export default function CompetenciaPage() {
           {accounts.length > 0 && (
             <div className="flex items-center gap-3">
               <button onClick={handlePoll} disabled={polling}
-                className="rounded bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-                {polling ? "Buscando videos…" : "↻ Descubrir ahora"}
+                className="inline-flex items-center gap-1.5 rounded bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                <RefreshCw size={14} className={polling ? "animate-spin" : ""} />{polling ? "Buscando videos…" : "Descubrir ahora"}
               </button>
               <span className="text-xs text-zinc-500">
                 Busca videos nuevos en todas las cuentas que tengas programadas para revisión.
@@ -773,22 +807,10 @@ export default function CompetenciaPage() {
             </div>
           )}
           <AddAccountForm onAdded={refreshAccounts} />
-          <ScanProfileForm
-            onScanned={() => {
-              setTab("videos");
-              refreshVideos();
-            }}
-          />
-          <AddManualLinksForm
-            onAdded={() => {
-              setTab("videos");
-              refreshVideos();
-            }}
-          />
 
           {accounts.length === 0 ? (
             <div className="rounded-lg border border-dashed border-edge p-8 text-center text-zinc-500">
-              <p className="text-2xl mb-2">🕵️</p>
+              <Radar size={28} className="mx-auto mb-2 text-zinc-600" />
               <p className="text-sm">Añade tus primeras cuentas de competencia arriba.</p>
               <p className="mt-1 text-xs text-zinc-600">
                 El sistema revisará sus videos automáticamente y filtrará los que superen tus umbrales.
@@ -804,15 +826,17 @@ export default function CompetenciaPage() {
 
           {accounts.length > 0 && (
             <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 p-4 text-sm text-amber-300/80">
-              <p className="font-semibold mb-1">⚙️ Para activar el descubrimiento automático</p>
+              <p className="mb-1 flex items-center gap-1.5 font-semibold"><Settings size={14} />Para activar el descubrimiento automático</p>
               <ul className="text-xs text-amber-400/70 space-y-1 list-disc pl-4">
-                <li>
-                  <b>📸 Instagram:</b> añade tu <b>token de Apify</b> en Ajustes (scraping seguro desde
-                  servidor; no necesita yt-dlp).
+                <li className="flex items-start gap-1.5">
+                  <PlatformIcon platform="instagram" size={13} className="mt-0.5" />
+                  <span><b>Instagram:</b> añade tu <b>token de Apify</b> en Ajustes (scraping seguro desde
+                  servidor; no necesita yt-dlp).</span>
                 </li>
-                <li>
-                  <b>▶️ YouTube / 🎵 TikTok:</b> requieren <code className="bg-amber-950/60 px-1 rounded">yt-dlp</code> + <code className="bg-amber-950/60 px-1 rounded">ffmpeg</code> en el servidor{" "}
-                  (<code className="bg-amber-950/60 px-1 rounded">brew install yt-dlp ffmpeg</code> en macOS).
+                <li className="flex items-start gap-1.5">
+                  <span className="mt-0.5 flex gap-1"><PlatformIcon platform="youtube" size={13} /><PlatformIcon platform="tiktok" size={13} /></span>
+                  <span><b>YouTube / TikTok:</b> requieren <code className="bg-amber-950/60 px-1 rounded">yt-dlp</code> + <code className="bg-amber-950/60 px-1 rounded">ffmpeg</code> en el servidor{" "}
+                  (<code className="bg-amber-950/60 px-1 rounded">brew install yt-dlp ffmpeg</code> en macOS).</span>
                 </li>
                 <li>Para las transcripciones, añade tu <b>clave de OpenAI</b> en Ajustes.</li>
               </ul>
@@ -821,27 +845,47 @@ export default function CompetenciaPage() {
         </div>
       )}
 
+      {/* ── ESCANEO PUNTUAL ── */}
+      {tab === "escanear" && (
+        <ScanProfileForm
+          onScanned={() => {
+            setTab("videos");
+            refreshVideos();
+          }}
+        />
+      )}
+
+      {/* ── ENLACES SUELTOS ── */}
+      {tab === "enlaces" && (
+        <AddManualLinksForm
+          onAdded={() => {
+            setTab("videos");
+            refreshVideos();
+          }}
+        />
+      )}
+
       {/* ── VIDEOS ── */}
       {tab === "videos" && (
         <div className="space-y-4">
           {/* filtros y acciones batch */}
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={handlePoll} disabled={polling || !!running}
-              className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
-              {polling ? "Buscando…" : "↻ Descubrir"}
+              className="inline-flex items-center gap-1.5 rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+              <RefreshCw size={14} className={polling ? "animate-spin" : ""} />{polling ? "Buscando…" : "Descubrir"}
             </button>
 
             {pendingCount > 0 && (
               <button onClick={() => handleRun("transcribe")} disabled={!!running || !!transcribing}
-                className="rounded bg-indigo-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
-                {running === "transcribe" ? "Transcribiendo…" : `🎙 Transcribir todos (${pendingCount})`}
+                className="inline-flex items-center gap-1.5 rounded bg-indigo-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+                {running === "transcribe" ? "Transcribiendo…" : <><Mic size={14} />Transcribir todos ({pendingCount})</>}
               </button>
             )}
 
             {(pendingCount > 0 || analysingCount > 0) && (
               <button onClick={() => handleRun("full")} disabled={!!running || !!transcribing}
-                className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
-                {running === "full" ? "Procesando… (puede tardar unos minutos)" : "🤖 Auto-pilot: transcribir + analizar + guiones"}
+                className="inline-flex items-center gap-1.5 rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+                {running === "full" ? "Procesando… (puede tardar unos minutos)" : <><Bot size={14} />Auto-pilot: transcribir + analizar + guiones</>}
               </button>
             )}
 
@@ -849,7 +893,7 @@ export default function CompetenciaPage() {
               className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-200">
               <option value="">Todas las cuentas</option>
               {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{PLATFORM_ICON[a.platform]} @{a.handle}</option>
+                <option key={a.id} value={a.id}>[{PLATFORM_LABEL[a.platform] ?? a.platform}] @{a.handle}</option>
               ))}
             </select>
 
@@ -892,9 +936,9 @@ export default function CompetenciaPage() {
                   <button
                     onClick={handleDeleteSelected}
                     disabled={bulkDeleting}
-                    className="ml-auto rounded bg-red-800 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    className="ml-auto inline-flex items-center gap-1.5 rounded bg-red-800 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                   >
-                    {bulkDeleting ? "Eliminando…" : `🗑 Eliminar seleccionados (${selectedIds.size})`}
+                    {bulkDeleting ? "Eliminando…" : <><Trash2 size={13} />Eliminar seleccionados ({selectedIds.size})</>}
                   </button>
                   <button onClick={() => setSelectedIds(new Set())} className="text-zinc-500 hover:text-zinc-300">
                     cancelar
@@ -906,7 +950,7 @@ export default function CompetenciaPage() {
 
           {videos.length === 0 ? (
             <div className="rounded-lg border border-dashed border-edge p-8 text-center text-zinc-500">
-              <p className="text-2xl mb-2">📹</p>
+              <Video size={28} className="mx-auto mb-2 text-zinc-600" />
               <p className="text-sm">
                 {statusFilter || accountFilter ? "No hay videos con este filtro." : "No hay videos todavía."}
               </p>
@@ -929,27 +973,7 @@ export default function CompetenciaPage() {
             </div>
           )}
 
-          {videosPages > 1 && (
-            <div className="mt-2 flex items-center justify-center gap-3">
-              <button
-                onClick={() => changeVideoPage(Math.max(1, videoPage - 1))}
-                disabled={videoPage <= 1}
-                className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
-              >
-                ← Anterior
-              </button>
-              <span className="text-sm text-zinc-400">
-                Página {videoPage} de {videosPages}
-              </span>
-              <button
-                onClick={() => changeVideoPage(Math.min(videosPages, videoPage + 1))}
-                disabled={videoPage >= videosPages}
-                className="rounded border border-edge bg-panel px-3 py-1.5 text-sm text-zinc-300 disabled:opacity-40"
-              >
-                Siguiente →
-              </button>
-            </div>
-          )}
+          <Pagination page={videoPage} pages={videosPages} onChange={changeVideoPage} />
         </div>
       )}
 

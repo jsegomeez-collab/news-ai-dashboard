@@ -1,5 +1,6 @@
 "use client";
 import { usePoll } from "@/components/usePoll";
+import { AlertTriangle } from "lucide-react";
 
 type Worker = {
   lastOk: boolean;
@@ -38,7 +39,9 @@ function ageLabel(ageSeconds: number): string {
   return `hace ${Math.floor(ageSeconds / 86400)} d`;
 }
 
-function workerPill(w: Worker): { value: string; tone: "default" | "good" | "warn" | "bad"; title?: string } {
+type Tone = "default" | "good" | "warn" | "bad";
+
+function workerPill(w: Worker): { value: string; tone: Tone; title?: string } {
   if (!w) return { value: "nunca ha corrido", tone: "bad" };
   const minutesAgo = w.ageSeconds / 60;
   const age = ageLabel(w.ageSeconds);
@@ -51,36 +54,37 @@ function workerPill(w: Worker): { value: string; tone: "default" | "good" | "war
 // El worker puede seguir "vivo" (noticias/guiones funcionando) mientras el
 // pipeline de espionaje de competencia está roto entero (Apify caído, yt-dlp
 // roto...) sin que la pill "Worker" lo refleje. Esta pill separada lo cubre.
-function competitorPill(w: Worker): { value: string; tone: "default" | "good" | "warn" | "bad"; title?: string } {
+function competitorPill(w: Worker): { value: string; tone: Tone; title?: string } {
   if (!w) return { value: "—", tone: "default" };
   if (!w.competitorOk) return { value: "error", tone: "bad", title: w.lastError ?? undefined };
   if (w.transcribedErrors > 0) return { value: `${w.transcribedErrors} error(es) transcribiendo`, tone: "warn" };
   return { value: `+${w.competitorInserted} videos / ${w.transcribedProcessed} transcritos`, tone: "default" };
 }
 
-function Pill({
-  label,
-  value,
-  tone = "default",
-  title,
-}: {
-  label: string;
-  value: string;
-  tone?: "default" | "good" | "warn" | "bad";
-  title?: string;
-}) {
-  const colors = { default: "text-zinc-300", good: "text-emerald-400", warn: "text-amber-400", bad: "text-red-400" };
-  // Chip con fondo propio (panel2) en vez de texto suelto separado por gaps:
-  // en desktop una fila de texto plano ya se lee bien, pero en móvil, donde
-  // el flex-wrap parte esta barra en 2-3 filas, un fondo delimita cada dato
-  // y evita que parezca una frase rota a media línea.
+// Píldora de cristal (como .cm-pill de la landing): etiqueta en mono
+// mayúscula + valor; el tono colorea solo el valor y, si es "bad", añade el
+// punto rojo latiendo.
+function Pill({ label, value, tone = "default", title }: { label: string; value: string; tone?: Tone; title?: string }) {
+  const colors: Record<Tone, string> = {
+    default: "text-zinc-200",
+    good: "text-emerald-300",
+    warn: "text-amber-300",
+    bad: "text-live",
+  };
+  const ring: Record<Tone, string> = {
+    default: "border-edge",
+    good: "border-emerald-500/40",
+    warn: "border-amber-500/40",
+    bad: "border-live/50 shadow-[0_0_14px_rgba(255,71,71,0.25)]",
+  };
   return (
     <div
-      className="flex items-center gap-1.5 rounded-md bg-panel2/70 px-2 py-1"
+      className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border bg-deep/60 px-3 py-1.5 backdrop-blur ${ring[tone]}`}
       title={title}
     >
-      <span className="text-zinc-500">{label}</span>
-      <span className={`font-semibold ${colors[tone]}`}>{value}</span>
+      {tone === "bad" && <span className="dot-live" />}
+      <span className="font-mono text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</span>
+      <span className={`text-xs font-semibold ${colors[tone]}`}>{value}</span>
     </div>
   );
 }
@@ -92,24 +96,27 @@ export function StatusBar() {
   return (
     <div className="space-y-2">
       {data.db && !data.db.persistent && (
-        <div className="rounded-lg border border-red-800 bg-red-950/50 px-4 py-2 text-xs text-red-300">
-          ⚠ <strong>La base de datos NO es persistente</strong> ({data.db.path}). En cada deploy se borrarán las
+        <div className="flex items-start gap-1.5 rounded-xl border border-live/50 bg-live/10 px-4 py-2 text-xs text-red-200">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span><strong>La base de datos NO es persistente</strong> ({data.db.path}). En cada deploy se borrarán las
           cuentas. En Render: añade un disco montado en <code>/data</code> y la variable{" "}
-          <code>DB_PATH=/data/app.db</code>.
+          <code>DB_PATH=/data/app.db</code>.</span>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-edge bg-panel px-3 py-2 text-xs">
-      <Pill label="Worker" {...workerPill(data.worker ?? null)} />
-      <Pill label="Espías" {...competitorPill(data.worker ?? null)} />
-      <Pill label="Clave Anthropic" value={data.hasKey ? "conectada" : "falta"} tone={data.hasKey ? "good" : "bad"} />
-      <Pill label="Guiones hoy" value={`${b.scriptsToday}/${b.maxScripts}`} tone={b.canGenerate ? "default" : "warn"} />
-      <Pill label="Gasto hoy" value={`$${b.costToday.toFixed(2)}/$${b.maxUsd.toFixed(0)}`} tone={b.canGenerate ? "default" : "warn"} />
-      <Pill label="Noticias" value={String(data.stats.articles)} />
-      <Pill label="En cola" value={String(data.stats.queuePending)} tone={data.stats.queuePending > 0 ? "warn" : "default"} />
-      <Pill label="Marca" value={data.knowledge.hasBases ? "lista" : "vacía"} tone={data.knowledge.hasBases ? "good" : "warn"} />
-      {data.window.intervalHours > 0 && (
-        <Pill label="Ventana" value={data.window.active ? "activa ahora" : "en pausa"} tone={data.window.active ? "good" : "default"} />
-      )}
+      {/* En móvil, una tira con scroll horizontal en vez de 8 píldoras
+          apiladas que empujaban el contenido media pantalla hacia abajo. */}
+      <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0">
+        <Pill label="Worker" {...workerPill(data.worker ?? null)} />
+        <Pill label="Espías" {...competitorPill(data.worker ?? null)} />
+        <Pill label="Anthropic" value={data.hasKey ? "conectada" : "falta clave"} tone={data.hasKey ? "good" : "bad"} />
+        <Pill label="Guiones hoy" value={`${b.scriptsToday}/${b.maxScripts}`} tone={b.canGenerate ? "default" : "warn"} />
+        <Pill label="Gasto hoy" value={`$${b.costToday.toFixed(2)} / $${b.maxUsd.toFixed(0)}`} tone={b.canGenerate ? "default" : "warn"} />
+        <Pill label="Noticias" value={String(data.stats.articles)} />
+        <Pill label="En cola" value={String(data.stats.queuePending)} tone={data.stats.queuePending > 0 ? "warn" : "default"} />
+        <Pill label="Marca" value={data.knowledge.hasBases ? "lista" : "vacía"} tone={data.knowledge.hasBases ? "good" : "warn"} />
+        {data.window.intervalHours > 0 && (
+          <Pill label="Ventana" value={data.window.active ? "activa ahora" : "en pausa"} tone={data.window.active ? "good" : "default"} />
+        )}
       </div>
     </div>
   );

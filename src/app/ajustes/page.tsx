@@ -1,6 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { usePoll } from "@/components/usePoll";
+import { PageHeader } from "@/components/PageHeader";
+import { PlatformIcon } from "@/components/PlatformIcon";
+import { Key, PenLine, Rocket, BarChart3, AlertTriangle, Bot, Smartphone, CalendarClock, Radar, Check, type LucideIcon } from "lucide-react";
 
 type Settings = {
   hasAnthropicKey: boolean;
@@ -50,10 +53,25 @@ type HeygenAvatarOption = {
   defaultVoiceLabel: string | null;
 };
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+// Ajustes se divide en 4 bloques con pestañas en vez de una parrilla de 13
+// tarjetas mezcladas (claves junto a topes junto a estadísticas): cada
+// tarjeta declara a qué bloque pertenece y se pinta solo cuando ese bloque
+// está activo — así no hay que reordenar el JSX de cada tarjeta.
+type Section = "conexiones" | "guiones" | "publicacion" | "consumo";
+const SECTIONS: { id: Section; label: string; icon: LucideIcon; hint: string }[] = [
+  { id: "conexiones", label: "Conexiones", icon: Key, hint: "Claves de Anthropic, OpenAI, Apify y HeyGen" },
+  { id: "guiones", label: "Guiones", icon: PenLine, hint: "Cómo, cuándo y cuánto se generan" },
+  { id: "publicacion", label: "Publicación", icon: Rocket, hint: "Metricool, cuentas destino y ventana horaria" },
+  { id: "consumo", label: "Consumo", icon: BarChart3, hint: "Gasto de hoy y tus datos" },
+];
+const SectionCtx = createContext<Section>("conexiones");
+
+function Card({ title, group, children }: { title: React.ReactNode; group: Section; children: React.ReactNode }) {
+  const active = useContext(SectionCtx);
+  if (group !== active) return null;
   return (
     <div className="rounded-lg border border-edge bg-panel p-4">
-      <h3 className="mb-3 text-sm font-semibold uppercase text-zinc-400">{title}</h3>
+      <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase text-zinc-400">{title}</h3>
       {children}
     </div>
   );
@@ -68,6 +86,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 
 export default function AjustesPage() {
   const [s, setS] = useState<Settings | null>(null);
+  const [section, setSection] = useState<Section>("conexiones");
   const [opts, setOpts] = useState<ModelOption[]>([]);
   const [keyInput, setKeyInput] = useState("");
   const [savedKey, setSavedKey] = useState(false);
@@ -269,8 +288,28 @@ export default function AjustesPage() {
   const num = (v: string) => Math.max(0, Number(v.replace(/[^\d.]/g, "")) || 0);
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <Card title={`Tu clave de Anthropic ${savedKey ? "· guardada ✓" : s.hasAnthropicKey ? "· configurada ✓" : ""}`}>
+    <div>
+      <PageHeader
+        title="Ajustes"
+        subtitle="Todo lo configurable, por bloques: conexiones, generación de guiones, publicación y consumo."
+      />
+      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-edge">
+        {SECTIONS.map((sec) => (
+          <button
+            key={sec.id}
+            onClick={() => setSection(sec.id)}
+            title={sec.hint}
+            className={`-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition ${
+              section === sec.id ? "border-brand text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <sec.icon size={15} />{sec.label}
+          </button>
+        ))}
+      </div>
+      <SectionCtx.Provider value={section}>
+      <div className="grid gap-4 md:grid-cols-2">
+      <Card group="conexiones" title={<><Key size={15} className="text-brand2" /><span className="flex-1">Tu clave de Anthropic</span>{(savedKey || s.hasAnthropicKey) && <span className="text-emerald-400 normal-case">{savedKey ? "guardada ✓" : "configurada ✓"}</span>}</>}>
         <p className="mb-2 text-sm text-zinc-400">
           Tu consumo se carga a TU cuenta de Anthropic. Consíguela en{" "}
           <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" className="text-brand hover:underline">
@@ -290,12 +329,12 @@ export default function AjustesPage() {
             Guardar
           </button>
         </div>
-        <p className="mt-2 text-xs text-amber-400/80">
-          ⚠️ La clave se guarda tal cual en el servidor. Úsala solo si confías en quien lo administra.
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-400/80">
+          <AlertTriangle size={14} /> La clave se guarda tal cual en el servidor. Úsala solo si confías en quien lo administra.
         </p>
       </Card>
 
-      <Card title={`OpenAI (transcripción) ${savedOaiKey ? "· guardada ✓" : s.hasOpenaiKey ? "· configurada ✓" : ""}`}>
+      <Card group="conexiones" title={<><Key size={15} className="text-brand2" /><span className="flex-1">OpenAI (transcripción)</span>{(savedOaiKey || s.hasOpenaiKey) && <span className="text-emerald-400 normal-case">{savedOaiKey ? "guardada ✓" : "configurada ✓"}</span>}</>}>
         <p className="mb-2 text-sm text-zinc-400">
           Para transcribir reels y TikToks de la competencia via Whisper. Consíguela en{" "}
           <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-brand hover:underline">
@@ -320,7 +359,7 @@ export default function AjustesPage() {
         </p>
       </Card>
 
-      <Card title={`Instagram (Apify) ${savedApify ? "· guardado ✓" : s.hasApifyToken ? "· configurado ✓" : ""}`}>
+      <Card group="conexiones" title={<><PlatformIcon platform="instagram" size={15} /><span className="flex-1">Instagram (Apify)</span>{(savedApify || s.hasApifyToken) && <span className="text-emerald-400 normal-case">{savedApify ? "guardado ✓" : "configurado ✓"}</span>}</>}>
         <p className="mb-2 text-sm text-zinc-400">
           Instagram bloquea el scraping directo desde servidores. Apify lo hace de forma
           segura con proxies residenciales (no expone tu IP ni ninguna cuenta). Consigue tu token en{" "}
@@ -346,10 +385,10 @@ export default function AjustesPage() {
         </p>
       </Card>
 
-      <Card title={`🧑‍💻 HeyGen (clon con IA) ${savedHeygenKey ? "· guardada ✓" : s.hasHeygenKey ? "· configurada ✓" : ""}`}>
+      <Card group="conexiones" title={<><Bot size={15} className="text-brand2" /><span className="flex-1">HeyGen (clon con IA)</span>{(savedHeygenKey || s.hasHeygenKey) && <span className="text-emerald-400 normal-case">{savedHeygenKey ? "guardada ✓" : "configurada ✓"}</span>}</>}>
         <p className="mb-2 text-sm text-zinc-400">
-          Cuando apruebas un guion, se genera automáticamente un vídeo con TU avatar clonado
-          leyéndolo. Consigue tu clave en{" "}
+          Tu avatar clonado (Digital Twin) lee los guiones que TÚ elijas y marques en Guiones o
+          Adaptados — nunca se lanza solo. Consigue tu clave en{" "}
           <a href="https://app.heygen.com/settings?nav=API" target="_blank" rel="noreferrer" className="text-brand hover:underline">
             app.heygen.com (Ajustes → API)
           </a>
@@ -420,15 +459,15 @@ export default function AjustesPage() {
             </label>
 
             {!s.heygenAvatarId || !s.heygenVoiceId ? (
-              <p className="text-xs text-amber-400/80">⚠️ Elige avatar y voz para activar la generación automática.</p>
+              <p className="flex items-center gap-1.5 text-xs text-amber-400/80"><AlertTriangle size={14} /> Elige tu avatar para poder generar vídeos.</p>
             ) : (
-              <p className="text-xs text-emerald-400/80">✓ Listo: los guiones que apruebes generarán vídeo automáticamente.</p>
+              <p className="text-xs text-emerald-400/80">✓ Listo: marca guiones en Guiones o Adaptados y pulsa &quot;Generar vídeo con avatar&quot;.</p>
             )}
           </div>
         )}
       </Card>
 
-      <Card title="Generación de guiones">
+      <Card group="guiones" title="Generación de guiones">
         <div className="space-y-4">
           <div>
             <div className="mb-1 text-sm text-zinc-300">Modelo que escribe los guiones</div>
@@ -447,16 +486,17 @@ export default function AjustesPage() {
           <div>
             <div className="mb-1 text-sm text-zinc-300">¿Qué formatos generar?</div>
             <div className="flex gap-2">
-              {([["reel", "📱 Instagram / Reels"], ["youtube", "▶️ YouTube"]] as const).map(([f, label]) => (
+              {([["reel", <Smartphone key="i" size={15} />, "Instagram / Reels"], ["youtube", <PlatformIcon key="i" platform="youtube" size={15} />, "YouTube"]] as const).map(([f, icon, label]) => (
                 <button
                   key={f}
                   onClick={() => toggleFormat(f)}
-                  className={`flex-1 rounded border px-3 py-2 text-sm font-medium ${
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded border px-3 py-2 text-sm font-medium ${
                     s.formats.includes(f) ? "border-brand bg-brand/20 text-white" : "border-edge bg-ink text-zinc-400"
                   }`}
                 >
-                  {s.formats.includes(f) ? "✓ " : ""}
+                  {icon}
                   {label}
+                  {s.formats.includes(f) && <Check size={14} className="text-emerald-400" />}
                 </button>
               ))}
             </div>
@@ -471,7 +511,7 @@ export default function AjustesPage() {
         </div>
       </Card>
 
-      <Card title="Ventana de actividad (control de gasto)">
+      <Card group="guiones" title="Ventana de actividad (control de gasto)">
         <p className="mb-3 text-xs text-zinc-500">
           Las noticias entran siempre. Esto limita CUÁNDO se generan guiones automáticos. Pon 0 para “siempre activo”.
         </p>
@@ -500,7 +540,7 @@ export default function AjustesPage() {
         </p>
       </Card>
 
-      <Card title="Filtros y topes">
+      <Card group="guiones" title="Filtros y topes">
         <div className="space-y-4">
           <div>
             <div className="mb-1 flex justify-between text-sm text-zinc-300">
@@ -535,7 +575,7 @@ export default function AjustesPage() {
         </div>
       </Card>
 
-      <Card title="📅 Ventana de publicación (auto-programación)">
+      <Card group="publicacion" title={<><CalendarClock size={15} className="text-brand2" /><span>Ventana de publicación (auto-programación)</span></>}>
         <p className="mb-3 text-xs text-zinc-500">
           Cuando un vídeo con avatar termina, se programa solo en el Calendario, espaciado
           1-3h del anterior. Esta ventana (hora UTC) evita que un hueco caiga de madrugada:
@@ -563,7 +603,7 @@ export default function AjustesPage() {
         </div>
       </Card>
 
-      <Card title={`🚀 Metricool (publicar) ${savedMcToken ? "· guardado ✓" : s.hasMetricoolToken ? "· configurado ✓" : ""}`}>
+      <Card group="publicacion" title={<><Rocket size={15} className="text-brand2" /><span className="flex-1">Metricool (publicar)</span>{(savedMcToken || s.hasMetricoolToken) && <span className="text-emerald-400 normal-case">{savedMcToken ? "guardado ✓" : "configurado ✓"}</span>}</>}>
         <p className="mb-2 text-sm text-zinc-400">
           Cuando un vídeo queda listo y programado en el Calendario, se sube y programa solo en
           cada cuenta destino que actives abajo — Metricool publica a la hora exacta. Consigue tu
@@ -656,7 +696,7 @@ export default function AjustesPage() {
         )}
       </Card>
 
-      <Card title="🕵️ Espionaje de competencia">
+      <Card group="guiones" title={<><Radar size={15} className="text-brand2" /><span>Espionaje de competencia</span></>}>
         <p className="mb-3 text-xs text-zinc-500">
           Cuántos guiones de competencia como máximo se pueden adaptar en un día. Se resetea a medianoche
           (UTC) — al llegar al tope, los videos pendientes quedan en espera hasta entonces. Pon 0 para ilimitado.
@@ -678,7 +718,7 @@ export default function AjustesPage() {
       </Card>
 
       {status && (
-        <Card title="Gasto de hoy">
+        <Card group="consumo" title="Gasto de hoy">
           <div className="mb-3">
             <div className="mb-1 flex justify-between text-xs text-zinc-400">
               <span>Coste</span>
@@ -699,7 +739,7 @@ export default function AjustesPage() {
       )}
 
       {status && s.hasHeygenKey && (
-        <Card title="Gasto de hoy en HeyGen">
+        <Card group="consumo" title="Gasto de hoy en HeyGen">
           <div className="mb-1 flex justify-between text-xs text-zinc-400">
             <span>Coste</span>
             <span>
@@ -723,12 +763,14 @@ export default function AjustesPage() {
       )}
 
       {status && (
-        <Card title="Tus datos">
+        <Card group="consumo" title="Tus datos">
           <div className="flex justify-between border-b border-edge/50 py-1.5 text-sm"><span className="text-zinc-400">Noticias clasificadas</span><span className="text-zinc-200">{status.stats.classified}</span></div>
           <div className="flex justify-between border-b border-edge/50 py-1.5 text-sm"><span className="text-zinc-400">Guiones generados</span><span className="text-zinc-200">{status.stats.scripts}</span></div>
           <div className="flex justify-between py-1.5 text-sm"><span className="text-zinc-400">En cola de generación</span><span className="text-zinc-200">{status.stats.queuePending}</span></div>
         </Card>
       )}
+      </div>
+      </SectionCtx.Provider>
     </div>
   );
 }

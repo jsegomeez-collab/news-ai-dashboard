@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Clapperboard } from "lucide-react";
 
 // Barra de acción para el arranque MANUAL en bloque del pipeline de avatar
 // (HeyGen -> Whisper/Remotion -> Drive/Calendario/Metricool) sobre varios
@@ -64,9 +65,9 @@ export function HeygenBulkBar({
       <button
         onClick={start}
         disabled={running}
-        className="rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded bg-brand px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
       >
-        {running ? "Lanzando…" : "🎬 Generar vídeo con avatar"}
+        {running ? "Lanzando…" : <><Clapperboard size={14} /> Generar vídeo con avatar</>}
       </button>
       <button onClick={onClear} disabled={running} className="text-sm text-zinc-400 hover:text-zinc-200 disabled:opacity-50">
         cancelar selección

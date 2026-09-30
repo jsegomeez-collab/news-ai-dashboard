@@ -11,7 +11,7 @@ export default async function SharedScriptsPage({ params }: { params: Promise<{ 
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
-      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand">AI Actualidad</p>
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand">AutoGuiones PRO</p>
       <h1 className="mb-1 text-xl font-bold text-white">{data.title || "Guiones para grabar"}</h1>
       <p className="mb-8 text-sm text-zinc-500">
         {data.scripts.length} guion{data.scripts.length === 1 ? "" : "es"}

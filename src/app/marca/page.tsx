@@ -1,6 +1,8 @@
 "use client";
+import { PageHeader } from "@/components/PageHeader";
 import { useEffect, useState } from "react";
 import { BRAND_KINDS, BRAND_LABEL, BRAND_HINT, type BrandKind } from "@/lib/status";
+import { Plus, Lightbulb } from "lucide-react";
 
 type SwipeItem = {
   id: number;
@@ -95,7 +97,7 @@ function SwipeForm({ onAdded }: { onAdded: () => void }) {
 
   return (
     <div className="rounded-lg border border-edge bg-panel p-4">
-      <h3 className="mb-1 font-semibold text-white">➕ Añadir guion de la competencia que funcionó</h3>
+      <h3 className="mb-1 flex items-center gap-1.5 font-semibold text-white"><Plus size={15} /> Añadir guion de la competencia que funcionó</h3>
       <p className="mb-3 text-xs text-zinc-500">
         Pega guiones/vídeos que petaron. Claude aprende el patrón de lo que funciona para replicarlo (no copiar literal).
       </p>
@@ -168,6 +170,10 @@ export default function MarcaPage() {
 
   return (
     <div className="space-y-8">
+      <PageHeader
+        title="Marca"
+        subtitle="El cerebro con el que se escriben tus guiones: tu negocio, tu cliente, tu oferta y los guiones de referencia que ya funcionaron."
+      />
       <section>
         <h2 className="mb-1 text-lg font-bold text-white">Bases de negocio</h2>
         <p className="mb-4 text-sm text-zinc-400">
@@ -201,7 +207,7 @@ export default function MarcaPage() {
                 </button>
               </div>
               <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-300">{s.content}</p>
-              {s.why && <p className="mt-2 text-sm text-brand2">💡 {s.why}</p>}
+              {s.why && <p className="mt-2 flex items-center gap-1.5 text-sm text-brand2"><Lightbulb size={13} /> {s.why}</p>}
             </div>
           ))}
           {swipe.length === 0 && (
